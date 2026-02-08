@@ -5,6 +5,13 @@
   "threshold_date": "2025-12-09",
   "repos": [
     {
+      "name": "photographic-memory",
+      "path": "/Users/sarvesh/code/photographic-memory",
+      "branch": "main",
+      "last_commit": "2026-02-08T07:49:08Z",
+      "objective": "Keep photographic-memory production-ready: identify pending work, implement the highest-impact task, verify with tests/build, and push stable updates to main."
+    },
+    {
       "name": "stock_analyzer",
       "path": "/Users/sarvesh/code/stock_analyzer",
       "branch": "main",
