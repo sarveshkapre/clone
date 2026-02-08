@@ -8,8 +8,7 @@ MODEL="${MODEL:-gpt-5.3-codex}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-120}"
 LOG_DIR="${LOG_DIR:-logs}"
 TRACKER_FILE_NAME="${TRACKER_FILE_NAME:-CLONE_FEATURES.md}"
-COMMITS_PER_REPO="${COMMITS_PER_REPO:-1}"
-COMMIT_STRATEGY="${COMMIT_STRATEGY:-exact}"
+TASKS_PER_REPO="${TASKS_PER_REPO:-10}"
 PROMPTS_FILE="${PROMPTS_FILE:-prompts/repo_steering.md}"
 CORE_PROMPT_FILE="${CORE_PROMPT_FILE:-prompts/autonomous_core_prompt.md}"
 CODEX_SANDBOX_FLAG="--dangerously-bypass-approvals-and-sandbox"
@@ -21,7 +20,7 @@ CI_WAIT_TIMEOUT_SECONDS="${CI_WAIT_TIMEOUT_SECONDS:-900}"
 CI_POLL_INTERVAL_SECONDS="${CI_POLL_INTERVAL_SECONDS:-30}"
 CI_MAX_FIX_ATTEMPTS="${CI_MAX_FIX_ATTEMPTS:-2}"
 CI_FAILURE_LOG_LINES="${CI_FAILURE_LOG_LINES:-200}"
-PARALLEL_REPOS="${PARALLEL_REPOS:-1}"
+PARALLEL_REPOS="${PARALLEL_REPOS:-3}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -51,13 +50,8 @@ if [[ "$CODEX_SANDBOX_FLAG" != "--dangerously-bypass-approvals-and-sandbox" ]]; 
   exit 1
 fi
 
-if ! [[ "$COMMITS_PER_REPO" =~ ^[1-9][0-9]*$ ]]; then
-  echo "COMMITS_PER_REPO must be a positive integer, got: $COMMITS_PER_REPO" >&2
-  exit 1
-fi
-
-if [[ "$COMMIT_STRATEGY" != "exact" && "$COMMIT_STRATEGY" != "up_to" ]]; then
-  echo "COMMIT_STRATEGY must be 'exact' or 'up_to', got: $COMMIT_STRATEGY" >&2
+if ! [[ "$TASKS_PER_REPO" =~ ^[1-9][0-9]*$ ]]; then
+  echo "TASKS_PER_REPO must be a positive integer, got: $TASKS_PER_REPO" >&2
   exit 1
 fi
 
@@ -192,8 +186,7 @@ log_event INFO "Repo count: $repo_count"
 log_event INFO "Max hours: $MAX_HOURS"
 log_event INFO "Max cycles: $MAX_CYCLES"
 log_event INFO "Tracker file: $TRACKER_FILE_NAME"
-log_event INFO "Commits per repo: $COMMITS_PER_REPO"
-log_event INFO "Commit strategy: $COMMIT_STRATEGY"
+log_event INFO "Tasks per repo session: $TASKS_PER_REPO"
 log_event INFO "Prompts file: $PROMPTS_FILE"
 log_event INFO "Core prompt file: $CORE_PROMPT_FILE"
 log_event INFO "Model: $MODEL"
@@ -673,10 +666,12 @@ EOF
 
 run_repo() {
   local repo_json="$1"
+  local cycle_id="$2"
 
   local name path branch objective current_branch last_message_file tracker_file pass_log_file repo_slug
-  local pass commits_done before_head after_head
+  local before_head after_head
   local prompt steering_guidance core_guidance viewer_login issue_context ci_context
+  local pass_label
   name="$(jq -r '.name' <<<"$repo_json")"
   path="$(jq -r '.path' <<<"$repo_json")"
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
@@ -689,13 +684,14 @@ run_repo() {
 
   CURRENT_REPO="$name"
   CURRENT_PATH="$path"
-  CURRENT_PASS=""
+  pass_label="cycle-${cycle_id}"
+  CURRENT_PASS="$pass_label"
   log_event INFO "START repo=$name path=$path"
-  set_status "running_repo" "$name" "$path" ""
+  set_status "running_repo" "$name" "$path" "$pass_label"
 
   if [[ ! -d "$path/.git" ]]; then
     log_event WARN "SKIP repo=$name reason=missing_git_dir"
-    set_status "skipped_repo" "$name" "$path" ""
+    set_status "skipped_repo" "$name" "$path" "$pass_label"
     return 0
   fi
 
@@ -728,29 +724,26 @@ run_repo() {
     push_main_with_retries "$path" "$branch" >>"$RUN_LOG" 2>&1 || true
   fi
 
-  commits_done=0
-  for (( pass=1; pass<=COMMITS_PER_REPO; pass++ )); do
-    now_epoch="$(date +%s)"
-    if (( now_epoch >= deadline_epoch )); then
-      log_event WARN "STOP repo=$name reason=runtime_deadline"
-      set_status "deadline_reached" "$name" "$path" "$pass"
-      break
-    fi
+  now_epoch="$(date +%s)"
+  if (( now_epoch >= deadline_epoch )); then
+    log_event WARN "STOP repo=$name reason=runtime_deadline"
+    set_status "deadline_reached" "$name" "$path" "$pass_label"
+    return 0
+  fi
 
-    CURRENT_PASS="${pass}/${COMMITS_PER_REPO}"
-    log_event INFO "PASS repo=$name pass=${pass}/${COMMITS_PER_REPO}"
-    set_status "running_pass" "$name" "$path" "${pass}/${COMMITS_PER_REPO}"
+  log_event INFO "PASS repo=$name pass=$pass_label"
+  set_status "running_pass" "$name" "$path" "$pass_label"
 
-    if ! sync_repo_branch "$path" "$branch" "$name"; then
-      break
-    fi
+  if ! sync_repo_branch "$path" "$branch" "$name"; then
+    return 0
+  fi
 
-    before_head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
-    last_message_file="$LOG_DIR/${RUN_ID}-${repo_slug}-pass-${pass}-last-message.txt"
-    pass_log_file="$LOG_DIR/${RUN_ID}-${repo_slug}-pass-${pass}.log"
-    log_event INFO "RUN repo=$name pass=${pass}/${COMMITS_PER_REPO} cwd=$path pass_log=$pass_log_file"
+  before_head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
+  last_message_file="$LOG_DIR/${RUN_ID}-${repo_slug}-${pass_label}-last-message.txt"
+  pass_log_file="$LOG_DIR/${RUN_ID}-${repo_slug}-${pass_label}.log"
+  log_event INFO "RUN repo=$name pass=$pass_label cwd=$path pass_log=$pass_log_file"
 
-    IFS= read -r -d '' prompt <<PROMPT || true
+  IFS= read -r -d '' prompt <<PROMPT || true
 You are my autonomous maintainer for this repository.
 
 Core directive:
@@ -759,21 +752,24 @@ $core_guidance
 Objective:
 $objective
 
-Execution mode for this pass:
-- Pass ${pass} of ${COMMITS_PER_REPO}.
-- Required commit strategy: ${COMMIT_STRATEGY}.
-- Complete exactly one high-value improvement in this pass and produce exactly one meaningful commit if possible.
+Execution mode for this repo session:
+- This run is part of global cycle $cycle_id.
+- Start by creating exactly $TASKS_PER_REPO actionable, prioritized tasks for this repository session (mix of features, bug fixes, refactors, code quality, reliability, performance, docs).
+- Add those tasks into "$TRACKER_FILE_NAME" under "Candidate Features To Do" with clear checkboxes.
+- Execute all selected tasks in this session unless blocked by external constraints or runtime limits.
+- Use multiple small, meaningful commits as needed. Push directly to origin/$branch after each meaningful commit.
+- At end of session, ensure tracker reflects completed work and remaining backlog.
 
 Required workflow:
 1) Read README/docs/roadmap/changelog/checklists first and extract pending product or engineering work.
 2) Review GitHub issue signals and prioritize only issues authored by "$viewer_login" and GitHub/bot-owned issues when they are relevant and high signal.
 3) Review recent CI signals and prioritize fixing failing checks when the fix is clear and safely shippable.
 4) Run a quick code review sweep to identify risks, dead or unused code, low-quality patterns, and maintenance debt.
-5) Propose 2-4 concrete feature or quality improvements based on current codebase reality.
-6) Select the highest-impact, safely shippable item and implement it now.
+5) Produce exactly $TASKS_PER_REPO prioritized tasks for this session and record them first.
+6) Implement tasks in priority order, re-evaluating only if new critical information appears.
 7) Run relevant checks (lint/tests/build) and fix failures.
 8) If the project can run locally, execute at least one real local smoke verification path (for example start app/service briefly, run a CLI flow, or make a local API request) and verify behavior.
-9) For any external API integration touched by this pass, execute at least one minimal integration check (or a safe smoke call path) when possible; if not possible, explain why and add follow-up test work.
+9) For any external API integration touched by this session, execute at least one minimal integration check (or a safe smoke call path) when possible; if not possible, explain why and add follow-up test work.
 10) Record verification evidence: exact commands run, key outputs, and pass/fail status.
 11) Update $TRACKER_FILE_NAME:
    - Keep "Candidate Features To Do" current and deduplicated.
@@ -786,9 +782,9 @@ Rules:
 - Avoid destructive git operations.
 - Do not post public comments/discussions on issues or PRs from this automation loop.
 - Favor real improvements over superficial edits.
-- If no meaningful feature remains, perform one high-value maintenance/refactor cleanup and document why.
+- If no meaningful feature remains, focus the task list on reliability, cleanup, and maintainability work.
 - Continuously look for algorithmic improvements, design simplification, and performance optimizations when safe.
-- End with concise output: change summary, tests run, remaining backlog ideas.
+- End with concise output: tasks planned, tasks completed, tests run, CI status, remaining backlog ideas.
 
 Steering prompts for this repository:
 $steering_guidance
@@ -800,95 +796,50 @@ GitHub CI signals:
 $ci_context
 PROMPT
 
-    codex_cmd=(codex exec "$CODEX_SANDBOX_FLAG" --cd "$path" --output-last-message "$last_message_file")
-    if [[ -n "$MODEL" ]]; then
-      codex_cmd+=(--model "$MODEL")
+  codex_cmd=(codex exec "$CODEX_SANDBOX_FLAG" --cd "$path" --output-last-message "$last_message_file")
+  if [[ -n "$MODEL" ]]; then
+    codex_cmd+=(--model "$MODEL")
+  fi
+  codex_cmd+=("$prompt")
+
+  if ! "${codex_cmd[@]}" 2>&1 | tee -a "$RUN_LOG" "$pass_log_file"; then
+    log_event WARN "FAIL repo=$name reason=codex_exec pass=$pass_label pass_log=$pass_log_file"
+  fi
+
+  current_branch="$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [[ "$current_branch" != "$branch" ]]; then
+    git -C "$path" checkout "$branch" >>"$RUN_LOG" 2>&1 || true
+  fi
+
+  commit_all_changes_if_any "$path" "chore: autonomous maintenance ${pass_label}"
+
+  if git -C "$path" remote get-url origin >/dev/null 2>&1; then
+    if ! push_main_with_retries "$path" "$branch"; then
+      log_event WARN "WARN repo=$name reason=final_push_failed pass=$pass_label"
     fi
-    codex_cmd+=("$prompt")
+  fi
 
-    if ! "${codex_cmd[@]}" 2>&1 | tee -a "$RUN_LOG" "$pass_log_file"; then
-      log_event WARN "FAIL repo=$name reason=codex_exec pass=${pass} pass_log=$pass_log_file"
-    fi
+  run_ci_autofix_for_pass \
+    "$path" \
+    "$name" \
+    "$branch" \
+    "$repo_slug" \
+    "$pass_label" \
+    "$objective" \
+    "$core_guidance" \
+    "$steering_guidance" \
+    "$viewer_login" \
+    "$issue_context" \
+    "$ci_context" \
+    "$pass_log_file"
 
-    current_branch="$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
-    if [[ "$current_branch" != "$branch" ]]; then
-      git -C "$path" checkout "$branch" >>"$RUN_LOG" 2>&1 || true
-    fi
+  after_head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
+  if [[ -n "$before_head" && -n "$after_head" && "$before_head" == "$after_head" ]]; then
+    log_event INFO "NO_CHANGE repo=$name pass=$pass_label"
+  fi
 
-    commit_all_changes_if_any "$path" "chore: autonomous maintenance pass ${pass}/${COMMITS_PER_REPO}"
-
-    if git -C "$path" remote get-url origin >/dev/null 2>&1; then
-      if ! push_main_with_retries "$path" "$branch"; then
-        log_event WARN "WARN repo=$name reason=final_push_failed pass=${pass}"
-      fi
-    fi
-
-    run_ci_autofix_for_pass \
-      "$path" \
-      "$name" \
-      "$branch" \
-      "$repo_slug" \
-      "$pass" \
-      "$objective" \
-      "$core_guidance" \
-      "$steering_guidance" \
-      "$viewer_login" \
-      "$issue_context" \
-      "$ci_context" \
-      "$pass_log_file"
-
-    after_head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
-
-    if [[ -z "$before_head" && -n "$after_head" ]]; then
-      commits_done="$((commits_done + 1))"
-      continue
-    fi
-    if [[ -n "$before_head" && -n "$after_head" && "$before_head" != "$after_head" ]]; then
-      commits_done="$((commits_done + 1))"
-      continue
-    fi
-
-    if [[ "$COMMIT_STRATEGY" == "up_to" ]]; then
-      log_event INFO "STOP repo=$name reason=no_meaningful_delta pass=${pass}"
-      break
-    fi
-
-    append_tracker_checkpoint "$tracker_file" "$pass" "$COMMITS_PER_REPO"
-    commit_all_changes_if_any "$path" "docs: autonomous checkpoint pass ${pass}/${COMMITS_PER_REPO}"
-    if git -C "$path" remote get-url origin >/dev/null 2>&1; then
-      push_main_with_retries "$path" "$branch" >>"$RUN_LOG" 2>&1 || true
-    fi
-    after_head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
-
-    if [[ -z "$before_head" && -n "$after_head" ]]; then
-      commits_done="$((commits_done + 1))"
-      continue
-    fi
-    if [[ -n "$before_head" && -n "$after_head" && "$before_head" != "$after_head" ]]; then
-      commits_done="$((commits_done + 1))"
-      continue
-    fi
-
-    git -C "$path" commit --allow-empty -m "chore: autonomous heartbeat pass ${pass}/${COMMITS_PER_REPO}" >>"$RUN_LOG" 2>&1 || true
-    if git -C "$path" remote get-url origin >/dev/null 2>&1; then
-      push_main_with_retries "$path" "$branch" >>"$RUN_LOG" 2>&1 || true
-    fi
-
-    after_head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
-    if [[ -z "$before_head" && -n "$after_head" ]]; then
-      commits_done="$((commits_done + 1))"
-      continue
-    fi
-    if [[ -n "$before_head" && -n "$after_head" && "$before_head" != "$after_head" ]]; then
-      commits_done="$((commits_done + 1))"
-      continue
-    fi
-
-    log_event WARN "WARN repo=$name reason=exact_commit_unmet pass=${pass}"
-  done
-
-  log_event INFO "END repo=$name commits_done=$commits_done target=$COMMITS_PER_REPO strategy=$COMMIT_STRATEGY"
-  set_status "repo_complete" "$name" "$path" ""
+  log_event INFO "END repo=$name pass=$pass_label"
+  set_status "repo_complete" "$name" "$path" "$pass_label"
 }
 
 CYCLE_DEADLINE_HIT=0
@@ -907,7 +858,7 @@ run_cycle_repos() {
         CYCLE_DEADLINE_HIT=1
         return 0
       fi
-      run_repo "$repo_json"
+      run_repo "$repo_json" "$cycle_id"
     done < <(jq -c '.repos[]' "$REPOS_FILE")
     return 0
   fi
@@ -933,7 +884,7 @@ run_cycle_repos() {
       sleep 1
     done
 
-    run_repo "$repo_json" &
+    run_repo "$repo_json" "$cycle_id" &
     pid="$!"
     worker_pids+=("$pid")
     log_event INFO "SPAWN cycle=$cycle_id worker_pid=$pid parallel_limit=$PARALLEL_REPOS"
