@@ -10,6 +10,7 @@ LOG_DIR="${LOG_DIR:-logs}"
 TRACKER_FILE_NAME="${TRACKER_FILE_NAME:-CLONE_FEATURES.md}"
 COMMITS_PER_REPO="${COMMITS_PER_REPO:-1}"
 COMMIT_STRATEGY="${COMMIT_STRATEGY:-exact}"
+PROMPTS_FILE="${PROMPTS_FILE:-prompts/repo_steering.md}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -57,6 +58,7 @@ echo "Max cycles: $MAX_CYCLES" | tee -a "$RUN_LOG"
 echo "Tracker file: $TRACKER_FILE_NAME" | tee -a "$RUN_LOG"
 echo "Commits per repo: $COMMITS_PER_REPO" | tee -a "$RUN_LOG"
 echo "Commit strategy: $COMMIT_STRATEGY" | tee -a "$RUN_LOG"
+echo "Prompts file: $PROMPTS_FILE" | tee -a "$RUN_LOG"
 
 has_uncommitted_changes() {
   local repo_path="$1"
@@ -137,6 +139,23 @@ append_tracker_checkpoint() {
   } >>"$tracker_file"
 }
 
+load_steering_prompt() {
+  if [[ -f "$PROMPTS_FILE" ]]; then
+    cat "$PROMPTS_FILE"
+    return 0
+  fi
+
+  cat <<'EOF'
+- What is the next relevant feature to build?
+- Can we improve the project quality, reliability, and maintainability?
+- Which features from similar projects are worth adapting here?
+- If Apple or Google built this, what product and engineering quality upgrades would they prioritize?
+- What are the top 5 improvements for this repository right now?
+- If web search is available, what recent ideas or techniques can we apply today?
+- Keep AGENTS.md, README.md, and other relevant docs current with changes.
+EOF
+}
+
 seed_tracker_from_repo() {
   local repo_path="$1"
   local tracker_file="$2"
@@ -201,7 +220,7 @@ run_repo() {
 
   local name path branch objective current_branch last_message_file tracker_file
   local pass commits_done before_head after_head
-  local prompt
+  local prompt steering_guidance
   name="$(jq -r '.name' <<<"$repo_json")"
   path="$(jq -r '.path' <<<"$repo_json")"
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
@@ -224,6 +243,8 @@ run_repo() {
   if ! sync_repo_branch "$path" "$branch" "$name"; then
     return 0
   fi
+
+  steering_guidance="$(load_steering_prompt)"
 
   seed_tracker_from_repo "$path" "$tracker_file"
   commit_all_changes_if_any "$path" "docs: initialize clone feature tracker"
@@ -277,6 +298,9 @@ Rules:
 - Favor real improvements over superficial edits.
 - If no meaningful feature remains, perform one high-value maintenance/refactor cleanup and document why.
 - End with concise output: change summary, tests run, remaining backlog ideas.
+
+Steering prompts for this repository:
+$steering_guidance
 PROMPT
 )"
 

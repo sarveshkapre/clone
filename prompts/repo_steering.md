@@ -1,0 +1,8 @@
+- What is the next relevant feature we should build for this repo?
+- Can we improve this project now (performance, DX, reliability, security, UX)?
+- Which features from similar or adjacent projects should we learn from and adapt here?
+- If Apple or Google built this product, what would they improve in design, architecture, and quality?
+- What are the top 5 highest-impact improvements we can do right now?
+- If web search is available in this environment, identify one recent and relevant idea/technique and apply it safely.
+- Always keep AGENTS.md, README.md, and other relevant .md files aligned with code changes.
+- Prefer deleting dead/unused code, simplifying complexity, and strengthening tests where possible.
