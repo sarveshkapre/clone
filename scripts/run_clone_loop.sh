@@ -20,12 +20,15 @@ CI_WAIT_TIMEOUT_SECONDS="${CI_WAIT_TIMEOUT_SECONDS:-900}"
 CI_POLL_INTERVAL_SECONDS="${CI_POLL_INTERVAL_SECONDS:-30}"
 CI_MAX_FIX_ATTEMPTS="${CI_MAX_FIX_ATTEMPTS:-2}"
 CI_FAILURE_LOG_LINES="${CI_FAILURE_LOG_LINES:-200}"
+PARALLEL_REPOS="${PARALLEL_REPOS:-1}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 RUN_LOG="$LOG_DIR/run-${RUN_ID}.log"
 EVENTS_LOG="$LOG_DIR/run-${RUN_ID}-events.log"
 STATUS_FILE="$LOG_DIR/run-${RUN_ID}-status.txt"
+WORKER_STATUS_DIR="$LOG_DIR/run-${RUN_ID}-workers"
+mkdir -p "$WORKER_STATUS_DIR"
 
 if [[ ! -f "$REPOS_FILE" ]]; then
   echo "Missing repos file: $REPOS_FILE" >&2
@@ -92,6 +95,11 @@ if ! [[ "$CI_FAILURE_LOG_LINES" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
+if ! [[ "$PARALLEL_REPOS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "PARALLEL_REPOS must be a positive integer, got: $PARALLEL_REPOS" >&2
+  exit 1
+fi
+
 repo_count="$(jq '.repos | length' "$REPOS_FILE")"
 if [[ "$repo_count" -eq 0 ]]; then
   echo "No repos found in $REPOS_FILE" | tee -a "$RUN_LOG"
@@ -130,6 +138,39 @@ events_log: $EVENTS_LOG
 EOF
 }
 
+update_worker_status() {
+  local state="$1"
+  local repo="${2:-}"
+  local path="${3:-}"
+  local pass="${4:-}"
+  local updated_at worker_file
+  updated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  worker_file="$WORKER_STATUS_DIR/worker-$$.txt"
+  cat >"$worker_file" <<EOF
+run_id: $RUN_ID
+pid: $$
+updated_at: $updated_at
+state: $state
+repo: $repo
+path: $path
+pass: $pass
+run_log: $RUN_LOG
+events_log: $EVENTS_LOG
+EOF
+}
+
+set_status() {
+  local state="$1"
+  local repo="${2:-}"
+  local path="${3:-}"
+  local pass="${4:-}"
+  if (( PARALLEL_REPOS > 1 )); then
+    update_worker_status "$state" "$repo" "$path" "$pass"
+  else
+    update_status "$state" "$repo" "$path" "$pass"
+  fi
+}
+
 CURRENT_REPO=""
 CURRENT_PATH=""
 CURRENT_PASS=""
@@ -157,9 +198,11 @@ log_event INFO "CI wait timeout seconds: $CI_WAIT_TIMEOUT_SECONDS"
 log_event INFO "CI poll interval seconds: $CI_POLL_INTERVAL_SECONDS"
 log_event INFO "CI max fix attempts: $CI_MAX_FIX_ATTEMPTS"
 log_event INFO "CI failure log lines: $CI_FAILURE_LOG_LINES"
+log_event INFO "Parallel repos: $PARALLEL_REPOS"
 log_event INFO "Run log: $RUN_LOG"
 log_event INFO "Events log: $EVENTS_LOG"
 log_event INFO "Status file: $STATUS_FILE"
+log_event INFO "Worker status dir: $WORKER_STATUS_DIR"
 update_status "starting"
 
 has_uncommitted_changes() {
@@ -638,11 +681,11 @@ run_repo() {
   CURRENT_PATH="$path"
   CURRENT_PASS=""
   log_event INFO "START repo=$name path=$path"
-  update_status "running_repo" "$name" "$path" ""
+  set_status "running_repo" "$name" "$path" ""
 
   if [[ ! -d "$path/.git" ]]; then
     log_event WARN "SKIP repo=$name reason=missing_git_dir"
-    update_status "skipped_repo" "$name" "$path" ""
+    set_status "skipped_repo" "$name" "$path" ""
     return 0
   fi
 
@@ -680,13 +723,13 @@ run_repo() {
     now_epoch="$(date +%s)"
     if (( now_epoch >= deadline_epoch )); then
       log_event WARN "STOP repo=$name reason=runtime_deadline"
-      update_status "deadline_reached" "$name" "$path" "$pass"
+      set_status "deadline_reached" "$name" "$path" "$pass"
       break
     fi
 
     CURRENT_PASS="${pass}/${COMMITS_PER_REPO}"
     log_event INFO "PASS repo=$name pass=${pass}/${COMMITS_PER_REPO}"
-    update_status "running_pass" "$name" "$path" "${pass}/${COMMITS_PER_REPO}"
+    set_status "running_pass" "$name" "$path" "${pass}/${COMMITS_PER_REPO}"
 
     if ! sync_repo_branch "$path" "$branch" "$name"; then
       break
@@ -832,7 +875,60 @@ PROMPT
   done
 
   log_event INFO "END repo=$name commits_done=$commits_done target=$COMMITS_PER_REPO strategy=$COMMIT_STRATEGY"
-  update_status "repo_complete" "$name" "$path" ""
+  set_status "repo_complete" "$name" "$path" ""
+}
+
+CYCLE_DEADLINE_HIT=0
+
+run_cycle_repos() {
+  local cycle_id="$1"
+  local repo_json
+  local now_epoch running_jobs pid
+  local -a worker_pids
+  worker_pids=()
+
+  if (( PARALLEL_REPOS <= 1 )); then
+    while IFS= read -r repo_json; do
+      now_epoch="$(date +%s)"
+      if (( now_epoch >= deadline_epoch )); then
+        CYCLE_DEADLINE_HIT=1
+        return 0
+      fi
+      run_repo "$repo_json"
+    done < <(jq -c '.repos[]' "$REPOS_FILE")
+    return 0
+  fi
+
+  while IFS= read -r repo_json; do
+    now_epoch="$(date +%s)"
+    if (( now_epoch >= deadline_epoch )); then
+      CYCLE_DEADLINE_HIT=1
+      break
+    fi
+
+    while :; do
+      now_epoch="$(date +%s)"
+      if (( now_epoch >= deadline_epoch )); then
+        CYCLE_DEADLINE_HIT=1
+        break 2
+      fi
+
+      running_jobs="$(jobs -rp | wc -l | tr -d '[:space:]')"
+      if (( running_jobs < PARALLEL_REPOS )); then
+        break
+      fi
+      sleep 1
+    done
+
+    run_repo "$repo_json" &
+    pid="$!"
+    worker_pids+=("$pid")
+    log_event INFO "SPAWN cycle=$cycle_id worker_pid=$pid parallel_limit=$PARALLEL_REPOS"
+  done < <(jq -c '.repos[]' "$REPOS_FILE")
+
+  for pid in "${worker_pids[@]}"; do
+    wait "$pid" || true
+  done
 }
 
 cycle=1
@@ -853,16 +949,13 @@ while :; do
   log_event INFO "--- Cycle $cycle ---"
   update_status "running_cycle_$cycle" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
 
-  while IFS= read -r repo_json; do
-    now_epoch="$(date +%s)"
-    if (( now_epoch >= deadline_epoch )); then
-      log_event INFO "Runtime deadline hit during cycle."
-      update_status "finished_deadline" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
-      break 2
-    fi
-
-    run_repo "$repo_json"
-  done < <(jq -c '.repos[]' "$REPOS_FILE")
+  CYCLE_DEADLINE_HIT=0
+  run_cycle_repos "$cycle"
+  if (( CYCLE_DEADLINE_HIT == 1 )); then
+    log_event INFO "Runtime deadline hit during cycle."
+    update_status "finished_deadline" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
+    break
+  fi
 
   cycle="$((cycle + 1))"
   now_epoch="$(date +%s)"
