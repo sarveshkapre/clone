@@ -15,6 +15,11 @@ CORE_PROMPT_FILE="${CORE_PROMPT_FILE:-prompts/autonomous_core_prompt.md}"
 GH_SIGNALS_ENABLED="${GH_SIGNALS_ENABLED:-1}"
 GH_ISSUES_LIMIT="${GH_ISSUES_LIMIT:-20}"
 GH_RUNS_LIMIT="${GH_RUNS_LIMIT:-15}"
+CI_AUTOFIX_ENABLED="${CI_AUTOFIX_ENABLED:-1}"
+CI_WAIT_TIMEOUT_SECONDS="${CI_WAIT_TIMEOUT_SECONDS:-900}"
+CI_POLL_INTERVAL_SECONDS="${CI_POLL_INTERVAL_SECONDS:-30}"
+CI_MAX_FIX_ATTEMPTS="${CI_MAX_FIX_ATTEMPTS:-2}"
+CI_FAILURE_LOG_LINES="${CI_FAILURE_LOG_LINES:-200}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -59,6 +64,31 @@ fi
 
 if ! [[ "$GH_RUNS_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
   echo "GH_RUNS_LIMIT must be a positive integer, got: $GH_RUNS_LIMIT" >&2
+  exit 1
+fi
+
+if ! [[ "$CI_AUTOFIX_ENABLED" =~ ^[01]$ ]]; then
+  echo "CI_AUTOFIX_ENABLED must be 0 or 1, got: $CI_AUTOFIX_ENABLED" >&2
+  exit 1
+fi
+
+if ! [[ "$CI_WAIT_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "CI_WAIT_TIMEOUT_SECONDS must be a positive integer, got: $CI_WAIT_TIMEOUT_SECONDS" >&2
+  exit 1
+fi
+
+if ! [[ "$CI_POLL_INTERVAL_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "CI_POLL_INTERVAL_SECONDS must be a positive integer, got: $CI_POLL_INTERVAL_SECONDS" >&2
+  exit 1
+fi
+
+if ! [[ "$CI_MAX_FIX_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "CI_MAX_FIX_ATTEMPTS must be a positive integer, got: $CI_MAX_FIX_ATTEMPTS" >&2
+  exit 1
+fi
+
+if ! [[ "$CI_FAILURE_LOG_LINES" =~ ^[1-9][0-9]*$ ]]; then
+  echo "CI_FAILURE_LOG_LINES must be a positive integer, got: $CI_FAILURE_LOG_LINES" >&2
   exit 1
 fi
 
@@ -122,6 +152,11 @@ log_event INFO "Core prompt file: $CORE_PROMPT_FILE"
 log_event INFO "GitHub signals enabled: $GH_SIGNALS_ENABLED"
 log_event INFO "GitHub issue limit: $GH_ISSUES_LIMIT"
 log_event INFO "GitHub runs limit: $GH_RUNS_LIMIT"
+log_event INFO "CI autofix enabled: $CI_AUTOFIX_ENABLED"
+log_event INFO "CI wait timeout seconds: $CI_WAIT_TIMEOUT_SECONDS"
+log_event INFO "CI poll interval seconds: $CI_POLL_INTERVAL_SECONDS"
+log_event INFO "CI max fix attempts: $CI_MAX_FIX_ATTEMPTS"
+log_event INFO "CI failure log lines: $CI_FAILURE_LOG_LINES"
 log_event INFO "Run log: $RUN_LOG"
 log_event INFO "Events log: $EVENTS_LOG"
 log_event INFO "Status file: $STATUS_FILE"
@@ -310,6 +345,218 @@ collect_ci_context() {
   else
     echo "$failures"
   fi
+}
+
+ci_autofix_ready() {
+  if [[ "$CI_AUTOFIX_ENABLED" != "1" ]]; then
+    return 1
+  fi
+  gh_ready || return 1
+  return 0
+}
+
+wait_for_ci_outcome() {
+  local repo_path="$1"
+  local branch="$2"
+  local head_sha="$3"
+  local report_file="$4"
+  local deadline now pending failed total seen_runs
+  local runs_json
+
+  seen_runs=0
+  deadline="$(( $(date +%s) + CI_WAIT_TIMEOUT_SECONDS ))"
+  : >"$report_file"
+
+  while :; do
+    now="$(date +%s)"
+    if (( now >= deadline )); then
+      if (( seen_runs == 0 )); then
+        echo "No CI workflow runs observed for commit $head_sha within ${CI_WAIT_TIMEOUT_SECONDS}s." >>"$report_file"
+      else
+        echo "Timed out waiting for CI completion for commit $head_sha after ${CI_WAIT_TIMEOUT_SECONDS}s." >>"$report_file"
+      fi
+      return 2
+    fi
+
+    runs_json="$(cd "$repo_path" && gh run list --branch "$branch" --commit "$head_sha" --limit "$GH_RUNS_LIMIT" --json databaseId,workflowName,status,conclusion,url,headSha,updatedAt 2>/dev/null || true)"
+    if [[ -z "$runs_json" || "$runs_json" == "[]" ]]; then
+      sleep "$CI_POLL_INTERVAL_SECONDS"
+      continue
+    fi
+
+    seen_runs=1
+    pending="$(jq '[.[] | select(.status != "completed")] | length' <<<"$runs_json" 2>/dev/null || echo 0)"
+    failed="$(jq '[.[] | select(.status == "completed" and (.conclusion != "success"))] | length' <<<"$runs_json" 2>/dev/null || echo 0)"
+    total="$(jq 'length' <<<"$runs_json" 2>/dev/null || echo 0)"
+
+    if (( pending > 0 )); then
+      sleep "$CI_POLL_INTERVAL_SECONDS"
+      continue
+    fi
+
+    {
+      echo "Commit: $head_sha"
+      echo "Observed runs: $total"
+      echo "Failed runs: $failed"
+      jq -r '.[] | "- Run #\(.databaseId) \(.workflowName // "workflow") [status=\(.status) conclusion=\(.conclusion // "unknown")] \(.url // "")"' <<<"$runs_json" 2>/dev/null || true
+    } >>"$report_file"
+
+    if (( failed > 0 )); then
+      return 1
+    fi
+    return 0
+  done
+}
+
+append_failed_run_logs() {
+  local repo_path="$1"
+  local branch="$2"
+  local head_sha="$3"
+  local report_file="$4"
+  local failed_ids
+  local run_id
+
+  failed_ids="$(
+    cd "$repo_path" && gh run list --branch "$branch" --commit "$head_sha" --status failure --limit "$GH_RUNS_LIMIT" --json databaseId \
+      | jq -r '.[0:3] | .[] | .databaseId' 2>/dev/null || true
+  )"
+
+  if [[ -z "$failed_ids" ]]; then
+    return 0
+  fi
+
+  {
+    echo
+    echo "Failed run log excerpts:"
+  } >>"$report_file"
+
+  while IFS= read -r run_id; do
+    [[ -z "$run_id" ]] && continue
+    {
+      echo
+      echo "=== Run #$run_id failed log excerpt ==="
+      cd "$repo_path" && gh run view "$run_id" --log-failed 2>/dev/null | tail -n "$CI_FAILURE_LOG_LINES"
+    } >>"$report_file" || {
+      echo "Could not fetch failed logs for run #$run_id." >>"$report_file"
+    }
+  done <<<"$failed_ids"
+}
+
+run_ci_autofix_for_pass() {
+  local repo_path="$1"
+  local repo_name="$2"
+  local branch="$3"
+  local repo_slug="$4"
+  local pass="$5"
+  local objective="$6"
+  local core_guidance="$7"
+  local steering_guidance="$8"
+  local viewer_login="$9"
+  local issue_context="${10}"
+  local ci_context="${11}"
+  local pass_log_file="${12}"
+
+  local fix_attempt head_sha new_head_sha ci_report_file ci_prompt ci_last_message_file ci_fix_log_file current_branch
+  local wait_rc
+
+  ci_autofix_ready || return 0
+  git -C "$repo_path" remote get-url origin >/dev/null 2>&1 || return 0
+
+  for (( fix_attempt=1; fix_attempt<=CI_MAX_FIX_ATTEMPTS; fix_attempt++ )); do
+    head_sha="$(git -C "$repo_path" rev-parse HEAD 2>/dev/null || true)"
+    [[ -z "$head_sha" ]] && return 0
+
+    ci_report_file="$LOG_DIR/${RUN_ID}-${repo_slug}-pass-${pass}-ci-attempt-${fix_attempt}.txt"
+    log_event INFO "CI_CHECK repo=$repo_name pass=${pass} attempt=${fix_attempt}/${CI_MAX_FIX_ATTEMPTS} sha=$head_sha"
+
+    wait_for_ci_outcome "$repo_path" "$branch" "$head_sha" "$ci_report_file"
+    wait_rc="$?"
+
+    if [[ "$wait_rc" -eq 0 ]]; then
+      log_event INFO "CI_PASS repo=$repo_name pass=${pass} sha=$head_sha"
+      return 0
+    fi
+
+    if [[ "$wait_rc" -eq 2 ]]; then
+      log_event WARN "CI_WAIT_UNRESOLVED repo=$repo_name pass=${pass} sha=$head_sha"
+      return 0
+    fi
+
+    append_failed_run_logs "$repo_path" "$branch" "$head_sha" "$ci_report_file"
+    ci_fix_log_file="$LOG_DIR/${RUN_ID}-${repo_slug}-pass-${pass}-ci-fix-${fix_attempt}.log"
+    ci_last_message_file="$LOG_DIR/${RUN_ID}-${repo_slug}-pass-${pass}-ci-fix-${fix_attempt}-last-message.txt"
+    log_event WARN "CI_FAIL repo=$repo_name pass=${pass} attempt=${fix_attempt}/${CI_MAX_FIX_ATTEMPTS} sha=$head_sha report=$ci_report_file"
+
+    IFS= read -r -d '' ci_prompt <<PROMPT || true
+You are fixing GitHub Actions CI failures for this repository.
+
+Core directive:
+$core_guidance
+
+Objective:
+$objective
+
+Current commit with failing CI:
+- branch: $branch
+- sha: $head_sha
+
+CI failure report:
+$(cat "$ci_report_file")
+
+GitHub issue signals (author-filtered):
+$issue_context
+
+GitHub CI signals:
+$ci_context
+
+Required workflow:
+1) Inspect failing workflow steps and identify root causes.
+2) Prioritize fixes for missing dependencies/configuration and failing tests/build steps.
+3) Implement the minimal safe fix with production-quality code.
+4) Run relevant local verification commands that correspond to failing CI jobs.
+5) Update README/AGENTS/docs if setup/configuration behavior changed.
+6) Commit to $branch and push directly to origin/$branch.
+
+Rules:
+- Do not post comments in GitHub issues/PRs.
+- Avoid destructive git operations.
+- Keep fix scope tight and reliable.
+- End with concise output: root cause, fix, tests run, and residual risks.
+
+Steering prompts:
+$steering_guidance
+PROMPT
+
+    codex_cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --cd "$repo_path" --output-last-message "$ci_last_message_file")
+    if [[ -n "$MODEL" ]]; then
+      codex_cmd+=(--model "$MODEL")
+    fi
+    codex_cmd+=("$ci_prompt")
+
+    if ! "${codex_cmd[@]}" 2>&1 | tee -a "$RUN_LOG" "$pass_log_file" "$ci_fix_log_file"; then
+      log_event WARN "CI_FIX_FAIL repo=$repo_name pass=${pass} attempt=${fix_attempt}/${CI_MAX_FIX_ATTEMPTS}"
+    fi
+
+    current_branch="$(git -C "$repo_path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [[ "$current_branch" != "$branch" ]]; then
+      git -C "$repo_path" checkout "$branch" >>"$RUN_LOG" 2>&1 || true
+    fi
+
+    commit_all_changes_if_any "$repo_path" "fix(ci): address GitHub Actions failures pass ${pass} attempt ${fix_attempt}/${CI_MAX_FIX_ATTEMPTS}"
+    if ! push_main_with_retries "$repo_path" "$branch"; then
+      log_event WARN "CI_FIX_PUSH_FAIL repo=$repo_name pass=${pass} attempt=${fix_attempt}/${CI_MAX_FIX_ATTEMPTS}"
+      return 0
+    fi
+
+    new_head_sha="$(git -C "$repo_path" rev-parse HEAD 2>/dev/null || true)"
+    if [[ -z "$new_head_sha" || "$new_head_sha" == "$head_sha" ]]; then
+      log_event WARN "CI_FIX_NO_DELTA repo=$repo_name pass=${pass} attempt=${fix_attempt}/${CI_MAX_FIX_ATTEMPTS}"
+      return 0
+    fi
+  done
+
+  log_event WARN "CI_FIX_EXHAUSTED repo=$repo_name pass=${pass} attempts=$CI_MAX_FIX_ATTEMPTS"
+  return 0
 }
 
 seed_tracker_from_repo() {
@@ -519,6 +766,20 @@ PROMPT
         log_event WARN "WARN repo=$name reason=final_push_failed pass=${pass}"
       fi
     fi
+
+    run_ci_autofix_for_pass \
+      "$path" \
+      "$name" \
+      "$branch" \
+      "$repo_slug" \
+      "$pass" \
+      "$objective" \
+      "$core_guidance" \
+      "$steering_guidance" \
+      "$viewer_login" \
+      "$issue_context" \
+      "$ci_context" \
+      "$pass_log_file"
 
     after_head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
 

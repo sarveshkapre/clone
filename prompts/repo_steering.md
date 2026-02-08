@@ -5,6 +5,7 @@
 - Identify the top 5 high-impact improvements currently available and execute the best one.
 - Review open GitHub issues created by the repository owner and GitHub-managed/bot accounts; implement only when relevant and valuable.
 - Review recent CI runs and prioritize fixing failing checks when the root cause is clear and safe to ship.
+- After each push, verify GitHub Actions for that commit and automatically remediate failures caused by missing dependencies/configuration or failing tests/build steps.
 - Always look for opportunities to simplify architecture, remove dead/unused code, and improve algorithmic efficiency.
 - Keep AGENTS.md, README.md, and other relevant documentation aligned with behavior changes.
 - Preserve project memory: capture learnings, decisions, and remaining opportunities in relevant markdown files.
