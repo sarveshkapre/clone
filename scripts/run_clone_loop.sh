@@ -4,7 +4,7 @@ set -euo pipefail
 REPOS_FILE="${REPOS_FILE:-repos.yaml}"
 MAX_HOURS="${MAX_HOURS:-10}"
 MAX_CYCLES="${MAX_CYCLES:-1}"
-MODEL="${MODEL:-}"
+MODEL="${MODEL:-gpt-5.3-codex}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-120}"
 LOG_DIR="${LOG_DIR:-logs}"
 TRACKER_FILE_NAME="${TRACKER_FILE_NAME:-CLONE_FEATURES.md}"
@@ -12,6 +12,7 @@ COMMITS_PER_REPO="${COMMITS_PER_REPO:-1}"
 COMMIT_STRATEGY="${COMMIT_STRATEGY:-exact}"
 PROMPTS_FILE="${PROMPTS_FILE:-prompts/repo_steering.md}"
 CORE_PROMPT_FILE="${CORE_PROMPT_FILE:-prompts/autonomous_core_prompt.md}"
+CODEX_SANDBOX_FLAG="--dangerously-bypass-approvals-and-sandbox"
 GH_SIGNALS_ENABLED="${GH_SIGNALS_ENABLED:-1}"
 GH_ISSUES_LIMIT="${GH_ISSUES_LIMIT:-20}"
 GH_RUNS_LIMIT="${GH_RUNS_LIMIT:-15}"
@@ -42,6 +43,11 @@ fi
 
 if ! command -v codex >/dev/null 2>&1; then
   echo "codex CLI is required" >&2
+  exit 1
+fi
+
+if [[ "$CODEX_SANDBOX_FLAG" != "--dangerously-bypass-approvals-and-sandbox" ]]; then
+  echo "CODEX_SANDBOX_FLAG must be --dangerously-bypass-approvals-and-sandbox" >&2
   exit 1
 fi
 
@@ -190,6 +196,8 @@ log_event INFO "Commits per repo: $COMMITS_PER_REPO"
 log_event INFO "Commit strategy: $COMMIT_STRATEGY"
 log_event INFO "Prompts file: $PROMPTS_FILE"
 log_event INFO "Core prompt file: $CORE_PROMPT_FILE"
+log_event INFO "Model: $MODEL"
+log_event INFO "Codex sandbox flag: $CODEX_SANDBOX_FLAG"
 log_event INFO "GitHub signals enabled: $GH_SIGNALS_ENABLED"
 log_event INFO "GitHub issue limit: $GH_ISSUES_LIMIT"
 log_event INFO "GitHub runs limit: $GH_RUNS_LIMIT"
@@ -570,7 +578,7 @@ Steering prompts:
 $steering_guidance
 PROMPT
 
-    codex_cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --cd "$repo_path" --output-last-message "$ci_last_message_file")
+    codex_cmd=(codex exec "$CODEX_SANDBOX_FLAG" --cd "$repo_path" --output-last-message "$ci_last_message_file")
     if [[ -n "$MODEL" ]]; then
       codex_cmd+=(--model "$MODEL")
     fi
@@ -787,7 +795,7 @@ GitHub CI signals:
 $ci_context
 PROMPT
 
-    codex_cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --cd "$path" --output-last-message "$last_message_file")
+    codex_cmd=(codex exec "$CODEX_SANDBOX_FLAG" --cd "$path" --output-last-message "$last_message_file")
     if [[ -n "$MODEL" ]]; then
       codex_cmd+=(--model "$MODEL")
     fi
