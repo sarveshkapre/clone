@@ -4,6 +4,7 @@ set -euo pipefail
 CODE_ROOT="${1:-/Users/sarvesh/code}"
 WINDOW_DAYS="${WINDOW_DAYS:-60}"
 OUTPUT_FILE="${OUTPUT_FILE:-repos.yaml}"
+IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-sarveshkapre.github.io}"
 
 if [[ ! -d "$CODE_ROOT" ]]; then
   echo "Code root not found: $CODE_ROOT" >&2
@@ -50,6 +51,20 @@ infer_objective() {
   printf 'Keep %s production-ready: identify pending work, implement the highest-impact task, verify with tests/build, and push stable updates to main.\n' "$repo_name"
 }
 
+is_ignored_repo() {
+  local repo_name="$1"
+  local token normalized
+
+  IFS=',' read -r -a ignore_tokens <<<"$IGNORED_REPOS_CSV"
+  for token in "${ignore_tokens[@]}"; do
+    normalized="$(printf '%s' "$token" | xargs)"
+    if [[ -n "$normalized" && "$repo_name" == "$normalized" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 repos_json='[]'
 
 while IFS= read -r git_dir; do
@@ -70,6 +85,9 @@ while IFS= read -r git_dir; do
   fi
 
   repo_name="$(basename "$repo_path")"
+  if is_ignored_repo "$repo_name"; then
+    continue
+  fi
   objective="$(infer_objective "$repo_path" "$repo_name")"
 
   entry="$(jq -n \

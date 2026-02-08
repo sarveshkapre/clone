@@ -1,64 +1,50 @@
 {
-  "generated_at": "2026-02-08T07:35:45Z",
+  "generated_at": "2026-02-08T21:15:43Z",
   "code_root": "/Users/sarvesh/code",
   "activity_window_days": 60,
-  "threshold_date": "2025-12-09",
+  "threshold_date": "2025-12-10",
   "repos": [
     {
-      "name": "photographic-memory",
-      "path": "/Users/sarvesh/code/photographic-memory",
+      "name": "chat_with_llm",
+      "path": "/Users/sarvesh/code/chat_with_llm",
       "branch": "main",
-      "last_commit": "2026-02-08T07:49:08Z",
-      "objective": "Keep photographic-memory production-ready: identify pending work, implement the highest-impact task, verify with tests/build, and push stable updates to main."
-    },
-    {
-      "name": "stock_analyzer",
-      "path": "/Users/sarvesh/code/stock_analyzer",
-      "branch": "main",
-      "last_commit": "2026-02-07T23:35:37-08:00",
-      "objective": "Keep stock_analyzer production-ready. Current focus: stock_analyzer. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "LLM-CAD",
-      "path": "/Users/sarvesh/code/LLM-CAD",
-      "branch": "main",
-      "last_commit": "2026-02-07T23:34:46-08:00",
-      "objective": "Keep LLM-CAD production-ready. Current focus: LLM CAD. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "secretiveX",
-      "path": "/Users/sarvesh/code/secretiveX",
-      "branch": "main",
-      "last_commit": "2026-02-07T23:26:31-08:00",
-      "objective": "Keep secretiveX production-ready. Current focus: SecretiveX. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "Scribe",
-      "path": "/Users/sarvesh/code/Scribe",
-      "branch": "main",
-      "last_commit": "2026-02-07T14:08:02-08:00",
-      "objective": "Keep Scribe production-ready. Current focus: SCRIBE - Technical Documentation & Codebase Overview. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "dexter",
-      "path": "/Users/sarvesh/code/dexter",
-      "branch": "main",
-      "last_commit": "2026-02-07T11:01:59-08:00",
-      "objective": "Keep dexter production-ready. Current focus: Dexter 🤖. Find the highest-impact pending work, implement it, test it, and push to main."
+      "last_commit": "2026-02-08T12:16:17-08:00",
+      "objective": "Keep chat_with_llm production-ready. Current focus: Signal Search. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "3d-object-rendering",
       "path": "/Users/sarvesh/code/3d-object-rendering",
       "branch": "main",
-      "last_commit": "2026-02-05T18:23:20-08:00",
+      "last_commit": "2026-02-08T12:08:14-08:00",
       "objective": "Keep 3d-object-rendering production-ready. Current focus: Artifact Viewer. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
-      "name": "chat_with_llm",
-      "path": "/Users/sarvesh/code/chat_with_llm",
+      "name": "secretiveX",
+      "path": "/Users/sarvesh/code/secretiveX",
       "branch": "main",
-      "last_commit": "2026-02-05T18:12:04-08:00",
-      "objective": "Keep chat_with_llm production-ready. Current focus: Signal Search. Find the highest-impact pending work, implement it, test it, and push to main."
+      "last_commit": "2026-02-08T10:41:31-08:00",
+      "objective": "Keep secretiveX production-ready. Current focus: SecretiveX. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "LLM-CAD",
+      "path": "/Users/sarvesh/code/LLM-CAD",
+      "branch": "main",
+      "last_commit": "2026-02-08T09:03:26-08:00",
+      "objective": "Keep LLM-CAD production-ready. Current focus: LLM CAD. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "stock_analyzer",
+      "path": "/Users/sarvesh/code/stock_analyzer",
+      "branch": "main",
+      "last_commit": "2026-02-08T02:25:51-08:00",
+      "objective": "Keep stock_analyzer production-ready. Current focus: stock_analyzer. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "photographic-memory",
+      "path": "/Users/sarvesh/code/photographic-memory",
+      "branch": "main",
+      "last_commit": "2026-02-08T01:09:47-08:00",
+      "objective": "Keep photographic-memory production-ready. Current focus: Photographic Memory. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "AstraView",
@@ -157,13 +143,6 @@
       "branch": "main",
       "last_commit": "2026-02-01T22:05:43-08:00",
       "objective": "Keep embeddb production-ready. Current focus: EmbedDB. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "sarveshkapre.github.io",
-      "path": "/Users/sarvesh/code/sarveshkapre.github.io",
-      "branch": "main",
-      "last_commit": "2026-02-01T21:47:30-08:00",
-      "objective": "Keep sarveshkapre.github.io production-ready. Current focus: sarveshkapre.github.io. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "microsites",
