@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPOS_FILE="${REPOS_FILE:-repos.yaml}"
-MAX_HOURS="${MAX_HOURS:-10}"
+MAX_HOURS="${MAX_HOURS:-0}"
 MAX_CYCLES="${MAX_CYCLES:-1}"
 MODEL="${MODEL:-gpt-5.3-codex}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-120}"
@@ -102,6 +102,11 @@ if ! [[ "$PARALLEL_REPOS" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
+if ! [[ "$MAX_HOURS" =~ ^[0-9]+$ ]]; then
+  echo "MAX_HOURS must be a non-negative integer (0 means unlimited), got: $MAX_HOURS" >&2
+  exit 1
+fi
+
 repo_count="$(jq '.repos | length' "$REPOS_FILE")"
 if [[ "$repo_count" -eq 0 ]]; then
   echo "No repos found in $REPOS_FILE" | tee -a "$RUN_LOG"
@@ -109,7 +114,19 @@ if [[ "$repo_count" -eq 0 ]]; then
 fi
 
 start_epoch="$(date +%s)"
-deadline_epoch="$((start_epoch + MAX_HOURS * 3600))"
+deadline_epoch=0
+if (( MAX_HOURS > 0 )); then
+  deadline_epoch="$((start_epoch + MAX_HOURS * 3600))"
+fi
+
+runtime_deadline_hit() {
+  if (( deadline_epoch == 0 )); then
+    return 1
+  fi
+  local now_epoch
+  now_epoch="$(date +%s)"
+  (( now_epoch >= deadline_epoch ))
+}
 
 log_event() {
   local level="$1"
@@ -185,7 +202,11 @@ log_event INFO "Run ID: $RUN_ID"
 log_event INFO "PID: $$"
 log_event INFO "Repos file: $REPOS_FILE"
 log_event INFO "Repo count: $repo_count"
-log_event INFO "Max hours: $MAX_HOURS"
+if (( MAX_HOURS == 0 )); then
+  log_event INFO "Max hours: unlimited"
+else
+  log_event INFO "Max hours: $MAX_HOURS"
+fi
 log_event INFO "Max cycles: $MAX_CYCLES"
 log_event INFO "Tracker file: $TRACKER_FILE_NAME"
 log_event INFO "Tasks per repo session: $TASKS_PER_REPO"
@@ -738,8 +759,7 @@ run_repo() {
     push_main_with_retries "$path" "$branch" >>"$RUN_LOG" 2>&1 || true
   fi
 
-  now_epoch="$(date +%s)"
-  if (( now_epoch >= deadline_epoch )); then
+  if runtime_deadline_hit; then
     log_event WARN "STOP repo=$name reason=runtime_deadline"
     set_status "deadline_reached" "$name" "$path" "$pass_label"
     rm -rf "$lock_dir" >/dev/null 2>&1 || true
@@ -889,8 +909,7 @@ run_cycle_repos() {
 
   if (( PARALLEL_REPOS <= 1 )); then
     while IFS= read -r repo_json; do
-      now_epoch="$(date +%s)"
-      if (( now_epoch >= deadline_epoch )); then
+      if runtime_deadline_hit; then
         CYCLE_DEADLINE_HIT=1
         return 0
       fi
@@ -900,15 +919,13 @@ run_cycle_repos() {
   fi
 
   while IFS= read -r repo_json; do
-    now_epoch="$(date +%s)"
-    if (( now_epoch >= deadline_epoch )); then
+    if runtime_deadline_hit; then
       CYCLE_DEADLINE_HIT=1
       break
     fi
 
     while :; do
-      now_epoch="$(date +%s)"
-      if (( now_epoch >= deadline_epoch )); then
+      if runtime_deadline_hit; then
         CYCLE_DEADLINE_HIT=1
         break 2
       fi
@@ -933,9 +950,12 @@ run_cycle_repos() {
 
 cycle=1
 while :; do
-  now_epoch="$(date +%s)"
-  if (( now_epoch >= deadline_epoch )); then
-    log_event INFO "Reached max runtime (${MAX_HOURS}h)."
+  if runtime_deadline_hit; then
+    if (( MAX_HOURS == 0 )); then
+      log_event INFO "Reached max runtime (unlimited mode should not hit deadline)."
+    else
+      log_event INFO "Reached max runtime (${MAX_HOURS}h)."
+    fi
     update_status "finished_deadline" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
     break
   fi
@@ -958,9 +978,12 @@ while :; do
   fi
 
   cycle="$((cycle + 1))"
-  now_epoch="$(date +%s)"
-  if (( now_epoch >= deadline_epoch )); then
-    log_event INFO "Reached max runtime (${MAX_HOURS}h)."
+  if runtime_deadline_hit; then
+    if (( MAX_HOURS == 0 )); then
+      log_event INFO "Reached max runtime (unlimited mode should not hit deadline)."
+    else
+      log_event INFO "Reached max runtime (${MAX_HOURS}h)."
+    fi
     update_status "finished_deadline" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
     break
   fi

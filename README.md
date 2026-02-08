@@ -40,7 +40,7 @@ cd /Users/sarvesh/code/Clone
 
 ```bash
 cd /Users/sarvesh/code/Clone
-MODEL=gpt-5.3-codex PARALLEL_REPOS=3 TASKS_PER_REPO=10 MAX_HOURS=12 MAX_CYCLES=9999 /Users/sarvesh/code/Clone/scripts/run_clone_loop.sh
+MODEL=gpt-5.3-codex PARALLEL_REPOS=3 TASKS_PER_REPO=10 MAX_CYCLES=3 /Users/sarvesh/code/Clone/scripts/run_clone_loop.sh
 ```
 
 3) Monitor:
@@ -56,7 +56,7 @@ cat /Users/sarvesh/code/Clone/logs/run-<RUN_ID>-status.txt
 - `PARALLEL_REPOS`: concurrent repos (default `3`)
 - `TASKS_PER_REPO`: max planned tasks per repo session (default `10`, may do fewer)
 - `MAX_CYCLES`: number of full passes across all repos (`1 cycle = 1 touch per repo`)
-- `MAX_HOURS`: total runtime cap
+- `MAX_HOURS`: total runtime cap (`0` = unlimited, default)
 - `CI_AUTOFIX_ENABLED`: `1` to auto-remediate failing GitHub Actions
 - `PROMPTS_FILE` / `CORE_PROMPT_FILE`: steering and core autonomous prompts
 
