@@ -1,8 +1,10 @@
-- What is the next relevant feature we should build for this repo?
-- Can we improve this project now (performance, DX, reliability, security, UX)?
-- Which features from similar or adjacent projects should we learn from and adapt here?
-- If Apple or Google built this product, what would they improve in design, architecture, and quality?
-- What are the top 5 highest-impact improvements we can do right now?
-- If web search is available in this environment, identify one recent and relevant idea/technique and apply it safely.
-- Always keep AGENTS.md, README.md, and other relevant .md files aligned with code changes.
-- Prefer deleting dead/unused code, simplifying complexity, and strengthening tests where possible.
+- Determine the most relevant next feature for this repository and explain why it matters now.
+- Evaluate if the project can be improved right now across product quality, UX, reliability, security, performance, and developer experience.
+- Learn from comparable projects and selectively adapt only the features that fit this codebase.
+- Apply a high-quality product/design bar: if a top-tier product team built this, what would they improve first?
+- Identify the top 5 high-impact improvements currently available and execute the best one.
+- Review open GitHub issues created by the repository owner and GitHub-managed/bot accounts; implement only when relevant and valuable.
+- Review recent CI runs and prioritize fixing failing checks when the root cause is clear and safe to ship.
+- Always look for opportunities to simplify architecture, remove dead/unused code, and improve algorithmic efficiency.
+- Keep AGENTS.md, README.md, and other relevant documentation aligned with behavior changes.
+- Preserve project memory: capture learnings, decisions, and remaining opportunities in relevant markdown files.

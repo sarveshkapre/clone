@@ -12,6 +12,9 @@ COMMITS_PER_REPO="${COMMITS_PER_REPO:-1}"
 COMMIT_STRATEGY="${COMMIT_STRATEGY:-exact}"
 PROMPTS_FILE="${PROMPTS_FILE:-prompts/repo_steering.md}"
 CORE_PROMPT_FILE="${CORE_PROMPT_FILE:-prompts/autonomous_core_prompt.md}"
+GH_SIGNALS_ENABLED="${GH_SIGNALS_ENABLED:-1}"
+GH_ISSUES_LIMIT="${GH_ISSUES_LIMIT:-20}"
+GH_RUNS_LIMIT="${GH_RUNS_LIMIT:-15}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -41,6 +44,21 @@ fi
 
 if [[ "$COMMIT_STRATEGY" != "exact" && "$COMMIT_STRATEGY" != "up_to" ]]; then
   echo "COMMIT_STRATEGY must be 'exact' or 'up_to', got: $COMMIT_STRATEGY" >&2
+  exit 1
+fi
+
+if ! [[ "$GH_SIGNALS_ENABLED" =~ ^[01]$ ]]; then
+  echo "GH_SIGNALS_ENABLED must be 0 or 1, got: $GH_SIGNALS_ENABLED" >&2
+  exit 1
+fi
+
+if ! [[ "$GH_ISSUES_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "GH_ISSUES_LIMIT must be a positive integer, got: $GH_ISSUES_LIMIT" >&2
+  exit 1
+fi
+
+if ! [[ "$GH_RUNS_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "GH_RUNS_LIMIT must be a positive integer, got: $GH_RUNS_LIMIT" >&2
   exit 1
 fi
 
@@ -101,6 +119,9 @@ log_event INFO "Commits per repo: $COMMITS_PER_REPO"
 log_event INFO "Commit strategy: $COMMIT_STRATEGY"
 log_event INFO "Prompts file: $PROMPTS_FILE"
 log_event INFO "Core prompt file: $CORE_PROMPT_FILE"
+log_event INFO "GitHub signals enabled: $GH_SIGNALS_ENABLED"
+log_event INFO "GitHub issue limit: $GH_ISSUES_LIMIT"
+log_event INFO "GitHub runs limit: $GH_RUNS_LIMIT"
 log_event INFO "Run log: $RUN_LOG"
 log_event INFO "Events log: $EVENTS_LOG"
 log_event INFO "Status file: $STATUS_FILE"
@@ -213,6 +234,84 @@ You are an autonomous expert engineer, highly focused on making this project pro
 EOF
 }
 
+gh_ready() {
+  if [[ "$GH_SIGNALS_ENABLED" != "1" ]]; then
+    return 1
+  fi
+  command -v gh >/dev/null 2>&1 || return 1
+  gh auth status >/dev/null 2>&1 || return 1
+  return 0
+}
+
+collect_issue_context() {
+  local repo_path="$1"
+  local viewer_login="$2"
+  local issue_json
+  local filtered
+
+  if [[ -z "$viewer_login" ]]; then
+    echo "- Issue signals unavailable: could not resolve authenticated GitHub user."
+    return 0
+  fi
+
+  issue_json="$(cd "$repo_path" && gh issue list --state open --limit "$GH_ISSUES_LIMIT" --json number,title,author,url 2>/dev/null || true)"
+  if [[ -z "$issue_json" || "$issue_json" == "[]" ]]; then
+    echo "- Open issues by $viewer_login or GitHub bots: none found."
+    return 0
+  fi
+
+  filtered="$(
+    jq -r \
+      --arg viewer "$viewer_login" \
+      '
+      map(
+        select(
+          .author.login == $viewer
+          or .author.login == "github"
+          or .author.login == "dependabot[bot]"
+          or .author.login == "github-actions[bot]"
+        )
+      )
+      | .[0:8]
+      | .[]
+      | "- #\(.number) \(.title) [author: \(.author.login)] \(.url)"
+      ' <<<"$issue_json" 2>/dev/null || true
+  )"
+
+  if [[ -z "$filtered" ]]; then
+    echo "- Open issues by $viewer_login or GitHub bots: none found."
+  else
+    echo "$filtered"
+  fi
+}
+
+collect_ci_context() {
+  local repo_path="$1"
+  local runs_json
+  local failures
+
+  runs_json="$(cd "$repo_path" && gh run list --limit "$GH_RUNS_LIMIT" --json databaseId,workflowName,displayTitle,status,conclusion,url 2>/dev/null || true)"
+  if [[ -z "$runs_json" || "$runs_json" == "[]" ]]; then
+    echo "- CI signals unavailable or no workflow runs found."
+    return 0
+  fi
+
+  failures="$(
+    jq -r '
+      map(select(.status == "completed" and (.conclusion != "success")))
+      | .[0:8]
+      | .[]
+      | "- Run #\(.databaseId) \(.workflowName // "workflow") [\(.conclusion // "unknown")] \(.url // "")"
+    ' <<<"$runs_json" 2>/dev/null || true
+  )"
+
+  if [[ -z "$failures" ]]; then
+    echo "- No failing completed CI runs in recent history."
+  else
+    echo "$failures"
+  fi
+}
+
 seed_tracker_from_repo() {
   local repo_path="$1"
   local tracker_file="$2"
@@ -277,7 +376,7 @@ run_repo() {
 
   local name path branch objective current_branch last_message_file tracker_file pass_log_file repo_slug
   local pass commits_done before_head after_head
-  local prompt steering_guidance core_guidance
+  local prompt steering_guidance core_guidance viewer_login issue_context ci_context
   name="$(jq -r '.name' <<<"$repo_json")"
   path="$(jq -r '.path' <<<"$repo_json")"
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
@@ -312,6 +411,16 @@ run_repo() {
 
   steering_guidance="$(load_steering_prompt)"
   core_guidance="$(load_core_prompt)"
+  viewer_login=""
+  issue_context="- GitHub issue signals disabled or unavailable."
+  ci_context="- GitHub CI signals disabled or unavailable."
+
+  if gh_ready && git -C "$path" remote get-url origin >/dev/null 2>&1; then
+    viewer_login="$(gh api user -q .login 2>/dev/null || true)"
+    issue_context="$(collect_issue_context "$path" "$viewer_login")"
+    ci_context="$(collect_ci_context "$path")"
+    log_event INFO "GitHub signals repo=$name viewer=${viewer_login:-unknown}"
+  fi
 
   seed_tracker_from_repo "$path" "$tracker_file"
   commit_all_changes_if_any "$path" "docs: initialize clone feature tracker"
@@ -341,7 +450,7 @@ run_repo() {
     pass_log_file="$LOG_DIR/${RUN_ID}-${repo_slug}-pass-${pass}.log"
     log_event INFO "RUN repo=$name pass=${pass}/${COMMITS_PER_REPO} cwd=$path pass_log=$pass_log_file"
 
-    prompt="$(cat <<PROMPT
+    IFS= read -r -d '' prompt <<PROMPT || true
 You are my autonomous maintainer for this repository.
 
 Core directive:
@@ -357,27 +466,36 @@ Execution mode for this pass:
 
 Required workflow:
 1) Read README/docs/roadmap/changelog/checklists first and extract pending product or engineering work.
-2) Run a quick code review sweep to identify risks, dead or unused code, low-quality patterns, and maintenance debt.
-3) Propose 2-4 concrete feature or quality improvements based on current codebase reality.
-4) Select the highest-impact, safely shippable item and implement it now.
-5) Run relevant checks (lint/tests/build) and fix failures.
-6) Update $TRACKER_FILE_NAME:
+2) Review GitHub issue signals and prioritize only issues authored by "$viewer_login" and GitHub/bot-owned issues when they are relevant and high signal.
+3) Review recent CI signals and prioritize fixing failing checks when the fix is clear and safely shippable.
+4) Run a quick code review sweep to identify risks, dead or unused code, low-quality patterns, and maintenance debt.
+5) Propose 2-4 concrete feature or quality improvements based on current codebase reality.
+6) Select the highest-impact, safely shippable item and implement it now.
+7) Run relevant checks (lint/tests/build) and fix failures.
+8) Update $TRACKER_FILE_NAME:
    - Keep "Candidate Features To Do" current and deduplicated.
    - Move delivered items to "Implemented" with date and evidence (files/tests).
    - Add actionable project insights to the "Insights" section.
-7) Commit directly to $branch and push directly to origin/$branch (no PR).
+9) Commit directly to $branch and push directly to origin/$branch (no PR).
 
 Rules:
 - Work only in this repository.
 - Avoid destructive git operations.
+- Do not post public comments/discussions on issues or PRs from this automation loop.
 - Favor real improvements over superficial edits.
 - If no meaningful feature remains, perform one high-value maintenance/refactor cleanup and document why.
+- Continuously look for algorithmic improvements, design simplification, and performance optimizations when safe.
 - End with concise output: change summary, tests run, remaining backlog ideas.
 
 Steering prompts for this repository:
 $steering_guidance
+
+GitHub issue signals (author-filtered):
+$issue_context
+
+GitHub CI signals:
+$ci_context
 PROMPT
-)"
 
     codex_cmd=(codex exec --dangerously-bypass-approvals-and-sandbox --cd "$path" --output-last-message "$last_message_file")
     if [[ -n "$MODEL" ]]; then
