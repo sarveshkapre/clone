@@ -14,6 +14,7 @@ Goal:
 - Runs maintenance/product-improvement passes per repo.
 - Uses steering prompts + a core directive for decision quality.
 - Tracks per-repo work memory in `CLONE_FEATURES.md`.
+- Runs local verification (lint/tests/build and smoke paths like API/CLI checks when feasible) and records evidence in pass output.
 - Pushes directly to `main`.
 - Watches GitHub Actions for pushed commits and attempts CI remediation.
 - Logs run, event, status, and per-pass details under `logs/`.

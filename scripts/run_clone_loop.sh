@@ -565,8 +565,10 @@ Required workflow:
 2) Prioritize fixes for missing dependencies/configuration and failing tests/build steps.
 3) Implement the minimal safe fix with production-quality code.
 4) Run relevant local verification commands that correspond to failing CI jobs.
-5) Update README/AGENTS/docs if setup/configuration behavior changed.
-6) Commit to $branch and push directly to origin/$branch.
+5) Run at least one end-to-end local smoke path if the service/tool is runnable (including local API call checks where applicable).
+6) Record verification evidence: exact commands run, key outputs, and pass/fail status.
+7) Update README/AGENTS/docs if setup/configuration behavior changed.
+8) Commit to $branch and push directly to origin/$branch.
 
 Rules:
 - Do not post comments in GitHub issues/PRs.
@@ -770,11 +772,14 @@ Required workflow:
 5) Propose 2-4 concrete feature or quality improvements based on current codebase reality.
 6) Select the highest-impact, safely shippable item and implement it now.
 7) Run relevant checks (lint/tests/build) and fix failures.
-8) Update $TRACKER_FILE_NAME:
+8) If the project can run locally, execute at least one real local smoke verification path (for example start app/service briefly, run a CLI flow, or make a local API request) and verify behavior.
+9) For any external API integration touched by this pass, execute at least one minimal integration check (or a safe smoke call path) when possible; if not possible, explain why and add follow-up test work.
+10) Record verification evidence: exact commands run, key outputs, and pass/fail status.
+11) Update $TRACKER_FILE_NAME:
    - Keep "Candidate Features To Do" current and deduplicated.
    - Move delivered items to "Implemented" with date and evidence (files/tests).
    - Add actionable project insights to the "Insights" section.
-9) Commit directly to $branch and push directly to origin/$branch (no PR).
+12) Commit directly to $branch and push directly to origin/$branch (no PR).
 
 Rules:
 - Work only in this repository.
