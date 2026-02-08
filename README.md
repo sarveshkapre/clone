@@ -54,7 +54,7 @@ cat /Users/sarvesh/code/Clone/logs/run-<RUN_ID>-status.txt
 ## Key Runtime Knobs
 
 - `PARALLEL_REPOS`: concurrent repos (default `3`)
-- `TASKS_PER_REPO`: planned tasks per repo session (default `10`)
+- `TASKS_PER_REPO`: max planned tasks per repo session (default `10`, may do fewer)
 - `MAX_CYCLES`: number of full passes across all repos (`1 cycle = 1 touch per repo`)
 - `MAX_HOURS`: total runtime cap
 - `CI_AUTOFIX_ENABLED`: `1` to auto-remediate failing GitHub Actions
