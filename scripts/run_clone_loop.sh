@@ -7,6 +7,7 @@ MAX_CYCLES="${MAX_CYCLES:-1}"
 MODEL="${MODEL:-}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-120}"
 LOG_DIR="${LOG_DIR:-logs}"
+TRACKER_FILE_NAME="${TRACKER_FILE_NAME:-CLONE_FEATURES.md}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -41,6 +42,7 @@ echo "Repos file: $REPOS_FILE" | tee -a "$RUN_LOG"
 echo "Repo count: $repo_count" | tee -a "$RUN_LOG"
 echo "Max hours: $MAX_HOURS" | tee -a "$RUN_LOG"
 echo "Max cycles: $MAX_CYCLES" | tee -a "$RUN_LOG"
+echo "Tracker file: $TRACKER_FILE_NAME" | tee -a "$RUN_LOG"
 
 has_uncommitted_changes() {
   local repo_path="$1"
@@ -78,14 +80,72 @@ push_main_with_retries() {
   return 1
 }
 
+seed_tracker_from_repo() {
+  local repo_path="$1"
+  local tracker_file="$2"
+  local temp_todos
+  local has_markdown_todo=0
+  local created_tracker=0
+
+  if [[ ! -f "$tracker_file" ]]; then
+    created_tracker=1
+    cat >"$tracker_file" <<EOF
+# Clone Feature Tracker
+
+## Context Sources
+- README and docs
+- TODO/FIXME markers in code
+- Test and build failures
+- Gaps found during codebase exploration
+
+## Candidate Features To Do
+
+## Implemented
+
+## Notes
+- This file is maintained by the autonomous clone loop.
+EOF
+  fi
+
+  if [[ "$created_tracker" -ne 1 ]]; then
+    return 0
+  fi
+
+  temp_todos="$(mktemp)"
+  find "$repo_path" -maxdepth 4 -type f \( -iname '*.md' -o -iname '*.txt' \) \
+    -not -path '*/.git/*' \
+    -not -path "*/${TRACKER_FILE_NAME}" \
+    -print0 2>/dev/null | while IFS= read -r -d '' f; do
+      awk '
+        BEGIN { IGNORECASE=1 }
+        /^[[:space:]]*[-*][[:space:]]+\[[[:space:]]\][[:space:]]+/ { print FILENAME ":" $0 }
+      ' "$f" 2>/dev/null || true
+    done >"$temp_todos"
+
+  if [[ -s "$temp_todos" ]]; then
+    has_markdown_todo=1
+  fi
+
+  if [[ "$has_markdown_todo" -eq 1 ]]; then
+    {
+      echo
+      echo "### Auto-discovered Open Checklist Items ($(date -u +%Y-%m-%d))"
+      sed 's/^/- /' "$temp_todos"
+    } >>"$tracker_file"
+  fi
+
+  rm -f "$temp_todos"
+}
+
 run_repo() {
   local repo_json="$1"
 
-  local name path branch objective current_branch last_message_file
+  local name path branch objective current_branch last_message_file tracker_file
   name="$(jq -r '.name' <<<"$repo_json")"
   path="$(jq -r '.path' <<<"$repo_json")"
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
   objective="$(jq -r '.objective' <<<"$repo_json")"
+  tracker_file="$path/$TRACKER_FILE_NAME"
 
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] START repo=$name path=$path" | tee -a "$RUN_LOG"
 
@@ -117,6 +177,9 @@ run_repo() {
     fi
   fi
 
+  seed_tracker_from_repo "$path" "$tracker_file"
+  commit_all_changes_if_any "$path" "docs: initialize clone feature tracker"
+
   last_message_file="$LOG_DIR/${RUN_ID}-${name}-last-message.txt"
 
   prompt="$(cat <<PROMPT
@@ -126,12 +189,16 @@ Objective:
 $objective
 
 Required workflow:
-1) Inspect the repository to identify pending work (bugs, TODO/FIXME markers, missing tests, docs gaps, broken scripts, dependency hygiene).
+1) Inspect the repository to identify pending work from README/docs/roadmaps/checklists first, then TODO/FIXME markers, missing tests, docs gaps, broken scripts, and dependency hygiene.
 2) Pick the highest-impact task you can finish safely now.
 3) Implement the task with clean code changes.
 4) Run relevant checks (lint/tests/build) and fix failures.
 5) Ensure there are no uncommitted changes left behind.
-6) Commit directly to $branch with a concise message and push directly to origin/$branch (no PR).
+6) Update $TRACKER_FILE_NAME before commit:
+   - Add pending candidate work items under "Candidate Features To Do".
+   - Move completed items into "Implemented" with date and short proof (files/tests).
+   - Keep the file concise and deduplicated.
+7) Commit directly to $branch with a concise message and push directly to origin/$branch (no PR).
 
 Rules:
 - Work only in this repository.
