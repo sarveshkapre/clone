@@ -11,6 +11,7 @@ TRACKER_FILE_NAME="${TRACKER_FILE_NAME:-CLONE_FEATURES.md}"
 COMMITS_PER_REPO="${COMMITS_PER_REPO:-1}"
 COMMIT_STRATEGY="${COMMIT_STRATEGY:-exact}"
 PROMPTS_FILE="${PROMPTS_FILE:-prompts/repo_steering.md}"
+CORE_PROMPT_FILE="${CORE_PROMPT_FILE:-prompts/autonomous_core_prompt.md}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -59,6 +60,7 @@ echo "Tracker file: $TRACKER_FILE_NAME" | tee -a "$RUN_LOG"
 echo "Commits per repo: $COMMITS_PER_REPO" | tee -a "$RUN_LOG"
 echo "Commit strategy: $COMMIT_STRATEGY" | tee -a "$RUN_LOG"
 echo "Prompts file: $PROMPTS_FILE" | tee -a "$RUN_LOG"
+echo "Core prompt file: $CORE_PROMPT_FILE" | tee -a "$RUN_LOG"
 
 has_uncommitted_changes() {
   local repo_path="$1"
@@ -156,6 +158,17 @@ load_steering_prompt() {
 EOF
 }
 
+load_core_prompt() {
+  if [[ -f "$CORE_PROMPT_FILE" ]]; then
+    cat "$CORE_PROMPT_FILE"
+    return 0
+  fi
+
+  cat <<'EOF'
+You are an autonomous expert engineer, highly focused on making this project product-market fit. You own decisions for this repository and wear multiple hats: developer, product thinker, user advocate, and DevEx optimizer. Identify the most relevant next features to build, update, improve, or remove. Keep track of key learnings in relevant markdown files in this project, and create one if needed. Treat these docs as your persistent project memory as you continue improving the codebase.
+EOF
+}
+
 seed_tracker_from_repo() {
   local repo_path="$1"
   local tracker_file="$2"
@@ -220,7 +233,7 @@ run_repo() {
 
   local name path branch objective current_branch last_message_file tracker_file
   local pass commits_done before_head after_head
-  local prompt steering_guidance
+  local prompt steering_guidance core_guidance
   name="$(jq -r '.name' <<<"$repo_json")"
   path="$(jq -r '.path' <<<"$repo_json")"
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
@@ -245,6 +258,7 @@ run_repo() {
   fi
 
   steering_guidance="$(load_steering_prompt)"
+  core_guidance="$(load_core_prompt)"
 
   seed_tracker_from_repo "$path" "$tracker_file"
   commit_all_changes_if_any "$path" "docs: initialize clone feature tracker"
@@ -271,6 +285,9 @@ run_repo() {
 
     prompt="$(cat <<PROMPT
 You are my autonomous maintainer for this repository.
+
+Core directive:
+$core_guidance
 
 Objective:
 $objective
