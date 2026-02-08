@@ -16,6 +16,8 @@ CORE_PROMPT_FILE="${CORE_PROMPT_FILE:-prompts/autonomous_core_prompt.md}"
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
 RUN_LOG="$LOG_DIR/run-${RUN_ID}.log"
+EVENTS_LOG="$LOG_DIR/run-${RUN_ID}-events.log"
+STATUS_FILE="$LOG_DIR/run-${RUN_ID}-status.txt"
 
 if [[ ! -f "$REPOS_FILE" ]]; then
   echo "Missing repos file: $REPOS_FILE" >&2
@@ -51,16 +53,58 @@ fi
 start_epoch="$(date +%s)"
 deadline_epoch="$((start_epoch + MAX_HOURS * 3600))"
 
-echo "Run ID: $RUN_ID" | tee -a "$RUN_LOG"
-echo "Repos file: $REPOS_FILE" | tee -a "$RUN_LOG"
-echo "Repo count: $repo_count" | tee -a "$RUN_LOG"
-echo "Max hours: $MAX_HOURS" | tee -a "$RUN_LOG"
-echo "Max cycles: $MAX_CYCLES" | tee -a "$RUN_LOG"
-echo "Tracker file: $TRACKER_FILE_NAME" | tee -a "$RUN_LOG"
-echo "Commits per repo: $COMMITS_PER_REPO" | tee -a "$RUN_LOG"
-echo "Commit strategy: $COMMIT_STRATEGY" | tee -a "$RUN_LOG"
-echo "Prompts file: $PROMPTS_FILE" | tee -a "$RUN_LOG"
-echo "Core prompt file: $CORE_PROMPT_FILE" | tee -a "$RUN_LOG"
+log_event() {
+  local level="$1"
+  local message="$2"
+  local ts
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "[$ts] [$level] $message" | tee -a "$RUN_LOG"
+  echo "{\"ts\":\"$ts\",\"level\":\"$level\",\"message\":$(jq -Rn --arg m "$message" '$m')}" >>"$EVENTS_LOG"
+}
+
+update_status() {
+  local state="$1"
+  local repo="${2:-}"
+  local path="${3:-}"
+  local pass="${4:-}"
+  local updated_at
+  updated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  cat >"$STATUS_FILE" <<EOF
+run_id: $RUN_ID
+pid: $$
+updated_at: $updated_at
+state: $state
+repo: $repo
+path: $path
+pass: $pass
+run_log: $RUN_LOG
+events_log: $EVENTS_LOG
+EOF
+}
+
+CURRENT_REPO=""
+CURRENT_PATH=""
+CURRENT_PASS=""
+cleanup() {
+  update_status "finished" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
+}
+trap cleanup EXIT
+
+log_event INFO "Run ID: $RUN_ID"
+log_event INFO "PID: $$"
+log_event INFO "Repos file: $REPOS_FILE"
+log_event INFO "Repo count: $repo_count"
+log_event INFO "Max hours: $MAX_HOURS"
+log_event INFO "Max cycles: $MAX_CYCLES"
+log_event INFO "Tracker file: $TRACKER_FILE_NAME"
+log_event INFO "Commits per repo: $COMMITS_PER_REPO"
+log_event INFO "Commit strategy: $COMMIT_STRATEGY"
+log_event INFO "Prompts file: $PROMPTS_FILE"
+log_event INFO "Core prompt file: $CORE_PROMPT_FILE"
+log_event INFO "Run log: $RUN_LOG"
+log_event INFO "Events log: $EVENTS_LOG"
+log_event INFO "Status file: $STATUS_FILE"
+update_status "starting"
 
 has_uncommitted_changes() {
   local repo_path="$1"
@@ -117,14 +161,14 @@ sync_repo_branch() {
   git -C "$repo_path" pull --rebase origin "$branch" >>"$RUN_LOG" 2>&1 || {
     git -C "$repo_path" rebase --abort >>"$RUN_LOG" 2>&1 || true
     git -C "$repo_path" pull --no-rebase origin "$branch" >>"$RUN_LOG" 2>&1 || {
-      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] FAIL repo=$repo_name reason=pull_sync_conflict" | tee -a "$RUN_LOG"
+      log_event WARN "FAIL repo=$repo_name reason=pull_sync_conflict"
       return 1
     }
   }
 
   if ! git -C "$repo_path" diff --quiet "@{upstream}"..HEAD 2>/dev/null; then
     if ! push_main_with_retries "$repo_path" "$branch"; then
-      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] WARN repo=$repo_name reason=push_pending_sync_failed" | tee -a "$RUN_LOG"
+      log_event WARN "WARN repo=$repo_name reason=push_pending_sync_failed"
     fi
   fi
 
@@ -231,7 +275,7 @@ EOF
 run_repo() {
   local repo_json="$1"
 
-  local name path branch objective current_branch last_message_file tracker_file
+  local name path branch objective current_branch last_message_file tracker_file pass_log_file repo_slug
   local pass commits_done before_head after_head
   local prompt steering_guidance core_guidance
   name="$(jq -r '.name' <<<"$repo_json")"
@@ -239,11 +283,20 @@ run_repo() {
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
   objective="$(jq -r '.objective' <<<"$repo_json")"
   tracker_file="$path/$TRACKER_FILE_NAME"
+  repo_slug="$(printf '%s' "$name" | tr '/[:space:]' '__' | tr -cd 'A-Za-z0-9._-')"
+  if [[ -z "$repo_slug" ]]; then
+    repo_slug="repo"
+  fi
 
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] START repo=$name path=$path" | tee -a "$RUN_LOG"
+  CURRENT_REPO="$name"
+  CURRENT_PATH="$path"
+  CURRENT_PASS=""
+  log_event INFO "START repo=$name path=$path"
+  update_status "running_repo" "$name" "$path" ""
 
   if [[ ! -d "$path/.git" ]]; then
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] SKIP repo=$name reason=missing_git_dir" | tee -a "$RUN_LOG"
+    log_event WARN "SKIP repo=$name reason=missing_git_dir"
+    update_status "skipped_repo" "$name" "$path" ""
     return 0
   fi
 
@@ -270,18 +323,23 @@ run_repo() {
   for (( pass=1; pass<=COMMITS_PER_REPO; pass++ )); do
     now_epoch="$(date +%s)"
     if (( now_epoch >= deadline_epoch )); then
-      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] STOP repo=$name reason=runtime_deadline" | tee -a "$RUN_LOG"
+      log_event WARN "STOP repo=$name reason=runtime_deadline"
+      update_status "deadline_reached" "$name" "$path" "$pass"
       break
     fi
 
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] PASS repo=$name pass=${pass}/${COMMITS_PER_REPO}" | tee -a "$RUN_LOG"
+    CURRENT_PASS="${pass}/${COMMITS_PER_REPO}"
+    log_event INFO "PASS repo=$name pass=${pass}/${COMMITS_PER_REPO}"
+    update_status "running_pass" "$name" "$path" "${pass}/${COMMITS_PER_REPO}"
 
     if ! sync_repo_branch "$path" "$branch" "$name"; then
       break
     fi
 
     before_head="$(git -C "$path" rev-parse HEAD 2>/dev/null || true)"
-    last_message_file="$LOG_DIR/${RUN_ID}-${name}-pass-${pass}-last-message.txt"
+    last_message_file="$LOG_DIR/${RUN_ID}-${repo_slug}-pass-${pass}-last-message.txt"
+    pass_log_file="$LOG_DIR/${RUN_ID}-${repo_slug}-pass-${pass}.log"
+    log_event INFO "RUN repo=$name pass=${pass}/${COMMITS_PER_REPO} cwd=$path pass_log=$pass_log_file"
 
     prompt="$(cat <<PROMPT
 You are my autonomous maintainer for this repository.
@@ -327,8 +385,8 @@ PROMPT
     fi
     codex_cmd+=("$prompt")
 
-    if ! "${codex_cmd[@]}" >>"$RUN_LOG" 2>&1; then
-      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] FAIL repo=$name reason=codex_exec pass=${pass}" | tee -a "$RUN_LOG"
+    if ! "${codex_cmd[@]}" 2>&1 | tee -a "$RUN_LOG" "$pass_log_file"; then
+      log_event WARN "FAIL repo=$name reason=codex_exec pass=${pass} pass_log=$pass_log_file"
     fi
 
     current_branch="$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
@@ -340,7 +398,7 @@ PROMPT
 
     if git -C "$path" remote get-url origin >/dev/null 2>&1; then
       if ! push_main_with_retries "$path" "$branch"; then
-        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] WARN repo=$name reason=final_push_failed pass=${pass}" | tee -a "$RUN_LOG"
+        log_event WARN "WARN repo=$name reason=final_push_failed pass=${pass}"
       fi
     fi
 
@@ -356,7 +414,7 @@ PROMPT
     fi
 
     if [[ "$COMMIT_STRATEGY" == "up_to" ]]; then
-      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] STOP repo=$name reason=no_meaningful_delta pass=${pass}" | tee -a "$RUN_LOG"
+      log_event INFO "STOP repo=$name reason=no_meaningful_delta pass=${pass}"
       break
     fi
 
@@ -391,31 +449,36 @@ PROMPT
       continue
     fi
 
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] WARN repo=$name reason=exact_commit_unmet pass=${pass}" | tee -a "$RUN_LOG"
+    log_event WARN "WARN repo=$name reason=exact_commit_unmet pass=${pass}"
   done
 
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] END repo=$name commits_done=$commits_done target=$COMMITS_PER_REPO strategy=$COMMIT_STRATEGY" | tee -a "$RUN_LOG"
+  log_event INFO "END repo=$name commits_done=$commits_done target=$COMMITS_PER_REPO strategy=$COMMIT_STRATEGY"
+  update_status "repo_complete" "$name" "$path" ""
 }
 
 cycle=1
 while :; do
   now_epoch="$(date +%s)"
   if (( now_epoch >= deadline_epoch )); then
-    echo "Reached max runtime (${MAX_HOURS}h)." | tee -a "$RUN_LOG"
+    log_event INFO "Reached max runtime (${MAX_HOURS}h)."
+    update_status "finished_deadline" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
     break
   fi
 
   if (( cycle > MAX_CYCLES )); then
-    echo "Reached max cycles ($MAX_CYCLES)." | tee -a "$RUN_LOG"
+    log_event INFO "Reached max cycles ($MAX_CYCLES)."
+    update_status "finished_cycles" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
     break
   fi
 
-  echo "--- Cycle $cycle ---" | tee -a "$RUN_LOG"
+  log_event INFO "--- Cycle $cycle ---"
+  update_status "running_cycle_$cycle" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
 
   while IFS= read -r repo_json; do
     now_epoch="$(date +%s)"
     if (( now_epoch >= deadline_epoch )); then
-      echo "Runtime deadline hit during cycle." | tee -a "$RUN_LOG"
+      log_event INFO "Runtime deadline hit during cycle."
+      update_status "finished_deadline" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
       break 2
     fi
 
@@ -425,15 +488,18 @@ while :; do
   cycle="$((cycle + 1))"
   now_epoch="$(date +%s)"
   if (( now_epoch >= deadline_epoch )); then
-    echo "Reached max runtime (${MAX_HOURS}h)." | tee -a "$RUN_LOG"
+    log_event INFO "Reached max runtime (${MAX_HOURS}h)."
+    update_status "finished_deadline" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
     break
   fi
 
   if (( cycle <= MAX_CYCLES )); then
-    echo "Sleeping ${SLEEP_SECONDS}s before next cycle." | tee -a "$RUN_LOG"
+    log_event INFO "Sleeping ${SLEEP_SECONDS}s before next cycle."
+    update_status "sleeping" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
     sleep "$SLEEP_SECONDS"
   fi
 
 done
 
-echo "Finished. Run log: $RUN_LOG" | tee -a "$RUN_LOG"
+log_event INFO "Finished. Run log: $RUN_LOG"
+update_status "finished" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
