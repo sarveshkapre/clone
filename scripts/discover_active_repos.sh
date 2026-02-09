@@ -5,7 +5,7 @@ CODE_ROOT="${1:-/Users/sarvesh/code}"
 WINDOW_DAYS="${WINDOW_DAYS:-60}"
 OUTPUT_FILE="${OUTPUT_FILE:-repos.yaml}"
 IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-sarveshkapre.github.io}"
-PINNED_REPOS_CSV="${PINNED_REPOS_CSV:-EchoTrail}"
+PINNED_REPOS_CSV="${PINNED_REPOS_CSV:-EchoTrail,CritPt,SecEval,aegis,caisi-cyber-evals,compression,evals,frontier-evals,infosec-evals,llm-news-feed,research-playground,robopet}"
 
 if [[ ! -d "$CODE_ROOT" ]]; then
   echo "Code root not found: $CODE_ROOT" >&2

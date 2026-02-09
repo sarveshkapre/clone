@@ -1,316 +1,330 @@
 {
-  "generated_at": "2026-02-08T21:50:14Z",
+  "generated_at": "2026-02-09T00:38:13Z",
   "code_root": "/Users/sarvesh/code",
   "activity_window_days": 60,
   "threshold_date": "2025-12-10",
   "repos": [
     {
-      "name": "chat_with_llm",
-      "path": "/Users/sarvesh/code/chat_with_llm",
+      "name": "robopet",
+      "path": "/Users/sarvesh/code/robopet",
       "branch": "main",
-      "last_commit": "2026-02-08T12:16:17-08:00",
-      "objective": "Keep chat_with_llm production-ready. Current focus: Signal Search. Find the highest-impact pending work, implement it, test it, and push to main."
+      "last_commit": "2026-02-09T00:38:12Z",
+      "objective": "Keep robopet production-ready. Current focus: robopet. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
-      "name": "3d-object-rendering",
-      "path": "/Users/sarvesh/code/3d-object-rendering",
+      "name": "llm-news-feed",
+      "path": "/Users/sarvesh/code/llm-news-feed",
       "branch": "main",
-      "last_commit": "2026-02-08T12:08:14-08:00",
-      "objective": "Keep 3d-object-rendering production-ready. Current focus: Artifact Viewer. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "secretiveX",
-      "path": "/Users/sarvesh/code/secretiveX",
-      "branch": "main",
-      "last_commit": "2026-02-08T10:41:31-08:00",
-      "objective": "Keep secretiveX production-ready. Current focus: SecretiveX. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "LLM-CAD",
-      "path": "/Users/sarvesh/code/LLM-CAD",
-      "branch": "main",
-      "last_commit": "2026-02-08T09:03:26-08:00",
-      "objective": "Keep LLM-CAD production-ready. Current focus: LLM CAD. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "stock_analyzer",
-      "path": "/Users/sarvesh/code/stock_analyzer",
-      "branch": "main",
-      "last_commit": "2026-02-08T02:25:51-08:00",
-      "objective": "Keep stock_analyzer production-ready. Current focus: stock_analyzer. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "photographic-memory",
-      "path": "/Users/sarvesh/code/photographic-memory",
-      "branch": "main",
-      "last_commit": "2026-02-08T01:09:47-08:00",
-      "objective": "Keep photographic-memory production-ready. Current focus: Photographic Memory. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "AstraView",
-      "path": "/Users/sarvesh/code/AstraView",
-      "branch": "main",
-      "last_commit": "2026-02-04T23:39:02-08:00",
-      "objective": "Keep AstraView production-ready. Current focus: AstraView. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "AI_Football_Manager",
-      "path": "/Users/sarvesh/code/AstraView/AI_Football_Manager",
-      "branch": "main",
-      "last_commit": "2026-02-04T23:36:46-08:00",
-      "objective": "Keep AI_Football_Manager production-ready. Current focus: AI Football Manager. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "ai-mermaid-live-editor",
-      "path": "/Users/sarvesh/code/ai-mermaid-live-editor",
-      "branch": "main",
-      "last_commit": "2026-02-04T23:18:46-08:00",
-      "objective": "Keep ai-mermaid-live-editor production-ready. Current focus: AI Mermaid Live Editor. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "sketchboard-chat",
-      "path": "/Users/sarvesh/code/sketchboard-chat",
-      "branch": "main",
-      "last_commit": "2026-02-03T07:12:34-08:00",
-      "objective": "Keep sketchboard-chat production-ready. Current focus: Sketchboard Chat. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "notion-workspace-synth",
-      "path": "/Users/sarvesh/code/notion-workspace-synth",
-      "branch": "main",
-      "last_commit": "2026-02-03T07:10:35-08:00",
-      "objective": "Keep notion-workspace-synth production-ready. Current focus: Notion Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "google-workspace-synth",
-      "path": "/Users/sarvesh/code/google-workspace-synth",
-      "branch": "main",
-      "last_commit": "2026-02-03T07:07:48-08:00",
-      "objective": "Keep google-workspace-synth production-ready. Current focus: Google Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "jwt-workbench",
-      "path": "/Users/sarvesh/code/jwt-workbench",
-      "branch": "main",
-      "last_commit": "2026-02-02T21:50:38-08:00",
-      "objective": "Keep jwt-workbench production-ready. Current focus: JWT Workbench. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "slack-workspace-synth",
-      "path": "/Users/sarvesh/code/slack-workspace-synth",
-      "branch": "main",
-      "last_commit": "2026-02-02T21:39:48-08:00",
-      "objective": "Keep slack-workspace-synth production-ready. Current focus: Slack Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "gptx",
-      "path": "/Users/sarvesh/code/gptx",
-      "branch": "main",
-      "last_commit": "2026-02-02T21:31:16-08:00",
-      "objective": "Keep gptx production-ready. Current focus: GPTX. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "agent-swarm-control-panel",
-      "path": "/Users/sarvesh/code/agent-swarm-control-panel",
-      "branch": "main",
-      "last_commit": "2026-02-02T13:05:59-08:00",
-      "objective": "Keep agent-swarm-control-panel production-ready. Current focus: Agent Swarm Control Panel. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "feed-jarvis",
-      "path": "/Users/sarvesh/code/feed-jarvis",
-      "branch": "main",
-      "last_commit": "2026-02-01T22:13:55-08:00",
-      "objective": "Keep feed-jarvis production-ready. Current focus: Feed Jarvis Studio (`feed-jarvis`). Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "agentic-writing-ide",
-      "path": "/Users/sarvesh/code/agentic-writing-ide",
-      "branch": "main",
-      "last_commit": "2026-02-01T22:10:58-08:00",
-      "objective": "Keep agentic-writing-ide production-ready. Current focus: Agentic Writing IDE. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "ai-headshot-studio",
-      "path": "/Users/sarvesh/code/ai-headshot-studio",
-      "branch": "main",
-      "last_commit": "2026-02-01T22:08:04-08:00",
-      "objective": "Keep ai-headshot-studio production-ready. Current focus: AI Headshot Studio. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "embeddb",
-      "path": "/Users/sarvesh/code/embeddb",
-      "branch": "main",
-      "last_commit": "2026-02-01T22:05:43-08:00",
-      "objective": "Keep embeddb production-ready. Current focus: EmbedDB. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "microsites",
-      "path": "/Users/sarvesh/code/microsites",
-      "branch": "main",
-      "last_commit": "2026-02-01T19:14:13-08:00",
-      "objective": "Keep microsites production-ready. Current focus: microsites. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "ai_factory",
-      "path": "/Users/sarvesh/code/ai_factory",
-      "branch": "main",
-      "last_commit": "2026-02-01T19:08:32-08:00",
-      "objective": "Keep ai_factory production-ready. Current focus: ai_factory. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "nyaya",
-      "path": "/Users/sarvesh/code/nyaya",
-      "branch": "main",
-      "last_commit": "2026-02-01T19:08:15-08:00",
-      "objective": "Keep nyaya production-ready. Current focus: Nyaya. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "Basic-C-Programming",
-      "path": "/Users/sarvesh/code/Basic-C-Programming",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:55:35-08:00",
-      "objective": "Keep Basic-C-Programming production-ready. Current focus: C-Programming. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "EchoTrail",
-      "path": "/Users/sarvesh/code/EchoTrail",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:48:35-08:00",
-      "objective": "Keep EchoTrail production-ready. Current focus: EchoTrail. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "log-redactor",
-      "path": "/Users/sarvesh/code/log-redactor",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:38:13-08:00",
-      "objective": "Keep log-redactor production-ready. Current focus: Log Redactor. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "on-device-event-vault",
-      "path": "/Users/sarvesh/code/on-device-event-vault",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:37:47-08:00",
-      "objective": "Keep on-device-event-vault production-ready. Current focus: On-Device Event Vault (`on-device-event-vault`). Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "idor-lens",
-      "path": "/Users/sarvesh/code/idor-lens",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:34:18-08:00",
-      "objective": "Keep idor-lens production-ready. Current focus: IDOR Lens. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "liquid-glass-ui",
-      "path": "/Users/sarvesh/code/liquid-glass-ui",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:33:45-08:00",
-      "objective": "Keep liquid-glass-ui production-ready. Current focus: Liquid Glass UI. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "cve-risk-mcp",
-      "path": "/Users/sarvesh/code/cve-risk-mcp",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:27:46-08:00",
-      "objective": "Keep cve-risk-mcp production-ready. Current focus: CVE Risk MCP Server. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "github-project-pilot",
-      "path": "/Users/sarvesh/code/github-project-pilot",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:27:29-08:00",
-      "objective": "Keep github-project-pilot production-ready. Current focus: GitHub Project Pilot. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "bas-orchestrator",
-      "path": "/Users/sarvesh/code/bas-orchestrator",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:27:10-08:00",
-      "objective": "Keep bas-orchestrator production-ready. Current focus: BAS Orchestrator. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "mcp-proxy-gateway",
-      "path": "/Users/sarvesh/code/mcp-proxy-gateway",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:25:37-08:00",
-      "objective": "Keep mcp-proxy-gateway production-ready. Current focus: MCP Proxy Gateway. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "secretive-x",
-      "path": "/Users/sarvesh/code/secretive-x",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:25:34-08:00",
-      "objective": "Keep secretive-x production-ready. Current focus: Secretive-X. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "subdomain-scout",
-      "path": "/Users/sarvesh/code/subdomain-scout",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:25:32-08:00",
-      "objective": "Keep subdomain-scout production-ready. Current focus: Subdomain Scout. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "csp-doctor",
-      "path": "/Users/sarvesh/code/csp-doctor",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:25:24-08:00",
-      "objective": "Keep csp-doctor production-ready. Current focus: CSP Doctor. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "ssrf-sentinel",
-      "path": "/Users/sarvesh/code/ssrf-sentinel",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:24:31-08:00",
-      "objective": "Keep ssrf-sentinel production-ready. Current focus: SSRF Sentinel. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "file-sanitizer",
-      "path": "/Users/sarvesh/code/file-sanitizer",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:23:53-08:00",
-      "objective": "Keep file-sanitizer production-ready. Current focus: File Sanitizer. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "rag-sanitizer",
-      "path": "/Users/sarvesh/code/rag-sanitizer",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:23:45-08:00",
-      "objective": "Keep rag-sanitizer production-ready. Current focus: RAG Sanitizer. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "esign-document-chat",
-      "path": "/Users/sarvesh/code/esign-document-chat",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:23:37-08:00",
-      "objective": "Keep esign-document-chat production-ready. Current focus: eSign + Document Chat. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "pcap-inspector",
-      "path": "/Users/sarvesh/code/pcap-inspector",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:23:16-08:00",
-      "objective": "Keep pcap-inspector production-ready. Current focus: PCAP Inspector. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "tcl_control",
-      "path": "/Users/sarvesh/code/tcl_control",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:22:56-08:00",
-      "objective": "Keep tcl_control production-ready. Current focus: TCL Fire TV control (software remote). Find the highest-impact pending work, implement it, test it, and push to main."
+      "last_commit": "2026-02-09T00:38:11Z",
+      "objective": "Keep llm-news-feed production-ready. Current focus: Signal Feed (LLM-native news feed). Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "write-for-humans-ais",
       "path": "/Users/sarvesh/code/write-for-humans-ais",
       "branch": "main",
-      "last_commit": "2026-01-31T22:22:37-08:00",
+      "last_commit": "2026-02-08T16:37:57-08:00",
       "objective": "Keep write-for-humans-ais production-ready. Current focus: Write for Humans + AIs. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "llm-agent-playground",
       "path": "/Users/sarvesh/code/llm-agent-playground",
       "branch": "main",
-      "last_commit": "2026-01-31T22:21:39-08:00",
+      "last_commit": "2026-02-08T16:37:51-08:00",
       "objective": "Keep llm-agent-playground production-ready. Current focus: LLM Agent Playground. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "pcap-inspector",
+      "path": "/Users/sarvesh/code/pcap-inspector",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:34:18-08:00",
+      "objective": "Keep pcap-inspector production-ready. Current focus: PCAP Inspector. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "tcl_control",
+      "path": "/Users/sarvesh/code/tcl_control",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:34:13-08:00",
+      "objective": "Keep tcl_control production-ready. Current focus: TCL Fire TV control (software remote). Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "esign-document-chat",
+      "path": "/Users/sarvesh/code/esign-document-chat",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:30:08-08:00",
+      "objective": "Keep esign-document-chat production-ready. Current focus: eSign + Document Chat. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "file-sanitizer",
+      "path": "/Users/sarvesh/code/file-sanitizer",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:27:32-08:00",
+      "objective": "Keep file-sanitizer production-ready. Current focus: File Sanitizer. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "rag-sanitizer",
+      "path": "/Users/sarvesh/code/rag-sanitizer",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:27:04-08:00",
+      "objective": "Keep rag-sanitizer production-ready. Current focus: RAG Sanitizer. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "ssrf-sentinel",
+      "path": "/Users/sarvesh/code/ssrf-sentinel",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:21:39-08:00",
+      "objective": "Keep ssrf-sentinel production-ready. Current focus: SSRF Sentinel. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "subdomain-scout",
+      "path": "/Users/sarvesh/code/subdomain-scout",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:20:10-08:00",
+      "objective": "Keep subdomain-scout production-ready. Current focus: Subdomain Scout. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "csp-doctor",
+      "path": "/Users/sarvesh/code/csp-doctor",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:19:42-08:00",
+      "objective": "Keep csp-doctor production-ready. Current focus: CSP Doctor. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "secretive-x",
+      "path": "/Users/sarvesh/code/secretive-x",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:13:45-08:00",
+      "objective": "Keep secretive-x production-ready. Current focus: Secretive-X. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "mcp-proxy-gateway",
+      "path": "/Users/sarvesh/code/mcp-proxy-gateway",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:11:24-08:00",
+      "objective": "Keep mcp-proxy-gateway production-ready. Current focus: MCP Proxy Gateway. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "bas-orchestrator",
+      "path": "/Users/sarvesh/code/bas-orchestrator",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:11:14-08:00",
+      "objective": "Keep bas-orchestrator production-ready. Current focus: BAS Orchestrator. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "github-project-pilot",
+      "path": "/Users/sarvesh/code/github-project-pilot",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:06:11-08:00",
+      "objective": "Keep github-project-pilot production-ready. Current focus: GitHub Project Pilot. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "cve-risk-mcp",
+      "path": "/Users/sarvesh/code/cve-risk-mcp",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:03:47-08:00",
+      "objective": "Keep cve-risk-mcp production-ready. Current focus: CVE Risk MCP Server. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "liquid-glass-ui",
+      "path": "/Users/sarvesh/code/liquid-glass-ui",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:02:41-08:00",
+      "objective": "Keep liquid-glass-ui production-ready. Current focus: Liquid Glass UI. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "idor-lens",
+      "path": "/Users/sarvesh/code/idor-lens",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:58:43-08:00",
+      "objective": "Keep idor-lens production-ready. Current focus: IDOR Lens. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "on-device-event-vault",
+      "path": "/Users/sarvesh/code/on-device-event-vault",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:54:59-08:00",
+      "objective": "Keep on-device-event-vault production-ready. Current focus: On-Device Event Vault (`on-device-event-vault`). Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "EchoTrail",
+      "path": "/Users/sarvesh/code/EchoTrail",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:51:54-08:00",
+      "objective": "Keep EchoTrail production-ready. Current focus: EchoTrail. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "log-redactor",
+      "path": "/Users/sarvesh/code/log-redactor",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:50:12-08:00",
+      "objective": "Keep log-redactor production-ready. Current focus: Log Redactor. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "Basic-C-Programming",
+      "path": "/Users/sarvesh/code/Basic-C-Programming",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:46:37-08:00",
+      "objective": "Keep Basic-C-Programming production-ready. Current focus: Basic C Programming. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "nyaya",
+      "path": "/Users/sarvesh/code/nyaya",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:44:40-08:00",
+      "objective": "Keep nyaya production-ready. Current focus: Nyaya. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "ai_factory",
+      "path": "/Users/sarvesh/code/ai_factory",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:39:40-08:00",
+      "objective": "Keep ai_factory production-ready. Current focus: ai_factory. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "microsites",
+      "path": "/Users/sarvesh/code/microsites",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:37:18-08:00",
+      "objective": "Keep microsites production-ready. Current focus: microsites. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "embeddb",
+      "path": "/Users/sarvesh/code/embeddb",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:35:23-08:00",
+      "objective": "Keep embeddb production-ready. Current focus: EmbedDB. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "agentic-writing-ide",
+      "path": "/Users/sarvesh/code/agentic-writing-ide",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:30:21-08:00",
+      "objective": "Keep agentic-writing-ide production-ready. Current focus: Agentic Writing IDE. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "ai-headshot-studio",
+      "path": "/Users/sarvesh/code/ai-headshot-studio",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:29:46-08:00",
+      "objective": "Keep ai-headshot-studio production-ready. Current focus: AI Headshot Studio. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "feed-jarvis",
+      "path": "/Users/sarvesh/code/feed-jarvis",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:22:53-08:00",
+      "objective": "Keep feed-jarvis production-ready. Current focus: Feed Jarvis Studio (`feed-jarvis`). Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "agent-swarm-control-panel",
+      "path": "/Users/sarvesh/code/agent-swarm-control-panel",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:19:39-08:00",
+      "objective": "Keep agent-swarm-control-panel production-ready. Current focus: Agent Swarm Control Panel. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "slack-workspace-synth",
+      "path": "/Users/sarvesh/code/slack-workspace-synth",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:15:55-08:00",
+      "objective": "Keep slack-workspace-synth production-ready. Current focus: Slack Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "gptx",
+      "path": "/Users/sarvesh/code/gptx",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:13:05-08:00",
+      "objective": "Keep gptx production-ready. Current focus: GPTX. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "jwt-workbench",
+      "path": "/Users/sarvesh/code/jwt-workbench",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:07:20-08:00",
+      "objective": "Keep jwt-workbench production-ready. Current focus: JWT Workbench. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "notion-workspace-synth",
+      "path": "/Users/sarvesh/code/notion-workspace-synth",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:03:01-08:00",
+      "objective": "Keep notion-workspace-synth production-ready. Current focus: Notion Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "google-workspace-synth",
+      "path": "/Users/sarvesh/code/google-workspace-synth",
+      "branch": "main",
+      "last_commit": "2026-02-08T15:00:15-08:00",
+      "objective": "Keep google-workspace-synth production-ready. Current focus: Google Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "sketchboard-chat",
+      "path": "/Users/sarvesh/code/sketchboard-chat",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:55:54-08:00",
+      "objective": "Keep sketchboard-chat production-ready. Current focus: Sketchboard Chat. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "ai-mermaid-live-editor",
+      "path": "/Users/sarvesh/code/ai-mermaid-live-editor",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:53:48-08:00",
+      "objective": "Keep ai-mermaid-live-editor production-ready. Current focus: AI Mermaid Live Editor. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "AI_Football_Manager",
+      "path": "/Users/sarvesh/code/AstraView/AI_Football_Manager",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:51:56-08:00",
+      "objective": "Keep AI_Football_Manager production-ready. Current focus: AI Football Manager. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "photographic-memory",
+      "path": "/Users/sarvesh/code/photographic-memory",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:45:37-08:00",
+      "objective": "Keep photographic-memory production-ready. Current focus: Photographic Memory. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "AstraView",
+      "path": "/Users/sarvesh/code/AstraView",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:45:18-08:00",
+      "objective": "Keep AstraView production-ready. Current focus: AstraView. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "stock_analyzer",
+      "path": "/Users/sarvesh/code/stock_analyzer",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:41:30-08:00",
+      "objective": "Keep stock_analyzer production-ready. Current focus: stock_analyzer. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "LLM-CAD",
+      "path": "/Users/sarvesh/code/LLM-CAD",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:33:20-08:00",
+      "objective": "Keep LLM-CAD production-ready. Current focus: LLM CAD. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "secretiveX",
+      "path": "/Users/sarvesh/code/secretiveX",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:30:21-08:00",
+      "objective": "Keep secretiveX production-ready. Current focus: SecretiveX. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "chat_with_llm",
+      "path": "/Users/sarvesh/code/chat_with_llm",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:26:20-08:00",
+      "objective": "Keep chat_with_llm production-ready. Current focus: Signal Search. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "3d-object-rendering",
+      "path": "/Users/sarvesh/code/3d-object-rendering",
+      "branch": "main",
+      "last_commit": "2026-02-08T14:21:46-08:00",
+      "objective": "Keep 3d-object-rendering production-ready. Current focus: Artifact Viewer. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "regex-explainer",
@@ -402,6 +416,69 @@
       "branch": "main",
       "last_commit": "2026-01-31T14:57:07-08:00",
       "objective": "Keep repo-scaffolder production-ready. Current focus: repo-scaffolder. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "research-playground",
+      "path": "/Users/sarvesh/code/research-playground",
+      "branch": "main",
+      "last_commit": "2025-12-07T11:22:21-08:00",
+      "objective": "Keep research-playground production-ready. Current focus: Research Playground. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "aegis",
+      "path": "/Users/sarvesh/code/aegis",
+      "branch": "main",
+      "last_commit": "2025-12-06T23:57:49-08:00",
+      "objective": "Keep aegis production-ready. Current focus: Aegis (Observer v0). Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "infosec-evals",
+      "path": "/Users/sarvesh/code/infosec-evals",
+      "branch": "main",
+      "last_commit": "2025-12-06T11:30:11-08:00",
+      "objective": "Keep infosec-evals production-ready. Current focus: infosec-evals. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "compression",
+      "path": "/Users/sarvesh/code/compression",
+      "branch": "main",
+      "last_commit": "2025-11-26T15:27:31-08:00",
+      "objective": "Keep compression production-ready. Current focus: LLMs can learn their own compression. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "frontier-evals",
+      "path": "/Users/sarvesh/code/frontier-evals",
+      "branch": "main",
+      "last_commit": "2025-11-25T15:09:46+01:00",
+      "objective": "Keep frontier-evals production-ready. Current focus: Frontier Evals. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "CritPt",
+      "path": "/Users/sarvesh/code/CritPt",
+      "branch": "main",
+      "last_commit": "2025-11-21T13:04:06-06:00",
+      "objective": "Keep CritPt production-ready. Current focus: Evaluation Pipeline for the CritPt Benchmark. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "evals",
+      "path": "/Users/sarvesh/code/evals",
+      "branch": "main",
+      "last_commit": "2025-11-03T13:36:50-08:00",
+      "objective": "Keep evals production-ready. Current focus: OpenAI Evals. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "caisi-cyber-evals",
+      "path": "/Users/sarvesh/code/caisi-cyber-evals",
+      "branch": "main",
+      "last_commit": "2025-09-29T23:39:10Z",
+      "objective": "Keep caisi-cyber-evals production-ready. Current focus: CAISI Cyber Evaluations. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "SecEval",
+      "path": "/Users/sarvesh/code/SecEval",
+      "branch": "main",
+      "last_commit": "2024-04-03T09:45:21+08:00",
+      "objective": "Keep SecEval production-ready. Current focus: SecEval: A Comprehensive Benchmark for Evaluating Cybersecurity Knowledge of Foundation Models. Find the highest-impact pending work, implement it, test it, and push to main."
     }
   ]
 }
