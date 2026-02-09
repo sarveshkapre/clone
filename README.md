@@ -76,6 +76,44 @@ else
 fi
 ```
 
+Nerdy runtime banner (`X HRS Y MINS`) plus process telemetry:
+
+```bash
+WORK_ROOT="${WORK_ROOT:-$HOME/code}"
+pids="$(pgrep -f run_clone_loop.sh | paste -sd, -)"
+
+if [[ -z "$pids" ]]; then
+  printf "\033[1;31m[C O D E X  R U N T I M E] REACTOR OFFLINE\033[0m\n"
+else
+  ps -o pid=,etime=,command= -p "$pids" | sed "s|$WORK_ROOT/||g" | awk '
+  function etime_to_sec(e, n,a,d,h,m,s){
+    n=split(e,a,/[-:]/)
+    if (index(e,"-"))      { d=a[1]; h=a[2]; m=a[3]; s=a[4] }
+    else if (n==3)         { d=0;    h=a[1]; m=a[2]; s=a[3] }
+    else                   { d=0;    h=0;    m=a[1]; s=a[2] }
+    return d*86400 + h*3600 + m*60 + s
+  }
+  BEGIN{ green="\033[1;32m"; reset="\033[0m"; bold="\033[1m" }
+  {
+    pid=$1; et=$2
+    sub($1 FS $2 FS, "", $0); cmd=$0
+    sec=etime_to_sec(et)
+    mins=int(sec/60); hh=int(sec/3600); mm=int((sec%3600)/60)
+    rows[++n]=sprintf("%010d\t%-6s | %7d | %02d:%02d   | %s", sec, pid, mins, hh, mm, cmd)
+    if (sec>max) max=sec
+  }
+  END{
+    H=int(max/3600); M=int((max%3600)/60)
+    print green bold "████ CODEX RUNTIME: " H " HRS " M " MINS ████" reset
+    print green bold "=== CODEX REACTOR TELEMETRY ===" reset
+    printf "%-6s | %-7s | %-7s | %s\n", "PID", "mins", "hh:mm", "command"
+    print  "------+---------+---------+-------------------------------"
+    for(i=1;i<=n;i++) print rows[i] | "sort -r | cut -f2-"
+    close("sort -r | cut -f2-")
+  }'
+fi
+```
+
 Commit counts in the last 8 hours (simple):
 
 ```bash
