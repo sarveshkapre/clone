@@ -4,7 +4,8 @@ set -euo pipefail
 CODE_ROOT="${1:-/Users/sarvesh/code}"
 WINDOW_DAYS="${WINDOW_DAYS:-60}"
 OUTPUT_FILE="${OUTPUT_FILE:-repos.yaml}"
-IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-sarveshkapre.github.io,robopet,openapi-fuzzer,regex-explainer,write-for-humans-ais,rag-sanitizer,ssrf-sentinel,bas-orchestrator,github-project-pilot,log-redactor,ai_factory,projects-registry,prompt-injection-firewall,secret-scanner-plus,webproxy-suite,repo-scaffolder,aegis,infosec-evals,compression,frontier-evals,CritPt,evals,caisi-cyber-evals,SecEval,ssrf_scanner,shadowserver-python-api,idor-detector,BotGuardian,chatgpt-arxiv,GPT-X,product-security-playground}"
+IGNORED_REPOS_FILE="${IGNORED_REPOS_FILE:-ignored_repos.yaml}"
+IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-sarveshkapre.github.io}"
 PINNED_REPOS_CSV="${PINNED_REPOS_CSV:-EchoTrail,llm-news-feed,research-playground,MDEASM,Strong-Password-and-Password-Hash-Generator,Web-Crawler-Scraper,nyaya-ai}"
 
 if [[ ! -d "$CODE_ROOT" ]]; then
@@ -63,6 +64,14 @@ is_ignored_repo() {
       return 0
     fi
   done
+
+  for token in "${IGNORED_REPOS_FILE_LIST[@]}"; do
+    normalized="$(printf '%s' "$token" | xargs)"
+    if [[ -n "$normalized" && "$repo_name" == "$normalized" ]]; then
+      return 0
+    fi
+  done
+
   return 1
 }
 
@@ -81,6 +90,21 @@ is_pinned_repo() {
 }
 
 repos_json='[]'
+declare -a IGNORED_REPOS_FILE_LIST
+IGNORED_REPOS_FILE_LIST=()
+
+if [[ -f "$IGNORED_REPOS_FILE" ]]; then
+  while IFS= read -r token; do
+    [[ -n "$token" ]] && IGNORED_REPOS_FILE_LIST+=("$token")
+  done < <(
+    jq -r '
+      .ignored_repos[]? |
+      if type == "string" then .
+      else (.name // empty)
+      end
+    ' "$IGNORED_REPOS_FILE" 2>/dev/null || true
+  )
+fi
 
 while IFS= read -r git_dir; do
   repo_path="${git_dir%/.git}"
