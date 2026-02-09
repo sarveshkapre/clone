@@ -30,7 +30,6 @@ Goal:
 - `prompts/autonomous_core_prompt.md`
 - `scripts/process_ideas.sh`
 - `ideas.yaml`
-- `ignored_repos.yaml`
 
 ## How To Run
 
@@ -184,7 +183,6 @@ done
 - `PROJECT_MEMORY_MAX_LINES`: compaction threshold for `PROJECT_MEMORY.md` (default `500`)
 - `CI_AUTOFIX_ENABLED`: `1` to auto-remediate failing GitHub Actions
 - `PROMPTS_FILE` / `CORE_PROMPT_FILE`: steering and core autonomous prompts
-- `IGNORED_REPOS_FILE`: file consumed by discovery for excluded repos (default `ignored_repos.yaml`)
 - `IGNORED_REPOS_CSV`: extra comma-separated excludes (default `sarveshkapre.github.io`)
 
 ## Repository Memory Policy
@@ -198,10 +196,9 @@ When `PROJECT_MEMORY.md` exceeds `PROJECT_MEMORY_MAX_LINES`, the loop auto-compa
 
 ## Ignored Repositories
 
-Discovery reads `/Users/sarvesh/code/Clone/ignored_repos.yaml` and excludes any matching repo names from `repos.yaml`.
+Discovery excludes repos listed in `IGNORED_REPOS_CSV`.
 
-- Use this file for durable deprioritization decisions.
-- Use `IGNORED_REPOS_CSV` for quick one-off overrides.
+- Use `IGNORED_REPOS_CSV` for durable and one-off overrides.
 - Refresh the queue after edits:
 
 ```bash
