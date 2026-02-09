@@ -26,6 +26,8 @@ Goal:
 - `repos.yaml`
 - `prompts/repo_steering.md`
 - `prompts/autonomous_core_prompt.md`
+- `scripts/process_ideas.sh`
+- `ideas.yaml`
 
 ## How To Run
 
@@ -76,8 +78,40 @@ done | sort -nr
 - `TASKS_PER_REPO`: max planned tasks per repo session (default `10`, may do fewer)
 - `MAX_CYCLES`: number of full passes across all repos (`1 cycle = 1 touch per repo`)
 - `MAX_HOURS`: total runtime cap (`0` = unlimited, default)
+- `IDEA_BOOTSTRAP_ENABLED`: `1` to process `ideas.yaml` into new projects (default)
 - `CI_AUTOFIX_ENABLED`: `1` to auto-remediate failing GitHub Actions
 - `PROMPTS_FILE` / `CORE_PROMPT_FILE`: steering and core autonomous prompts
+
+## New Idea Intake
+
+Use `/Users/sarvesh/code/Clone/ideas.yaml` to introduce brand-new projects (even if no repo exists yet).
+
+Minimal flow:
+
+1) Add an idea entry with `status: "NEW"`:
+
+```json
+{
+  "id": "voice-notes-v1",
+  "title": "Voice Notes Assistant",
+  "summary": "Capture voice notes, summarize, and tag them quickly.",
+  "status": "NEW",
+  "repo_name": "voice-notes-assistant"
+}
+```
+
+2) Run the loop. It will automatically:
+- triage and bootstrap local project files in `/Users/sarvesh/code/<repo_name>`
+- initialize git + commit
+- attempt private GitHub repo creation/push via `gh` (if authenticated)
+- append/update that project in `/Users/sarvesh/code/Clone/repos.yaml`
+- mark idea status to `ACTIVE` when successful (or `BLOCKED` on failure)
+
+Status meanings:
+- `NEW`: pending idea, ready for incubator
+- `TRIAGED`: already assessed, still eligible for bootstrap
+- `ACTIVE`: bootstrapped/enrolled in normal autonomous loop
+- `BLOCKED`: incubator failed; check `last_error`
 
 ## Safety Notes
 

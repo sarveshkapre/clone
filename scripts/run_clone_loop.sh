@@ -9,6 +9,9 @@ SLEEP_SECONDS="${SLEEP_SECONDS:-120}"
 LOG_DIR="${LOG_DIR:-logs}"
 TRACKER_FILE_NAME="${TRACKER_FILE_NAME:-CLONE_FEATURES.md}"
 TASKS_PER_REPO="${TASKS_PER_REPO:-10}"
+IDEAS_FILE="${IDEAS_FILE:-ideas.yaml}"
+IDEA_BOOTSTRAP_ENABLED="${IDEA_BOOTSTRAP_ENABLED:-1}"
+CODE_ROOT="${CODE_ROOT:-/Users/sarvesh/code}"
 PROMPTS_FILE="${PROMPTS_FILE:-prompts/repo_steering.md}"
 CORE_PROMPT_FILE="${CORE_PROMPT_FILE:-prompts/autonomous_core_prompt.md}"
 CODEX_SANDBOX_FLAG="--dangerously-bypass-approvals-and-sandbox"
@@ -21,6 +24,8 @@ CI_POLL_INTERVAL_SECONDS="${CI_POLL_INTERVAL_SECONDS:-30}"
 CI_MAX_FIX_ATTEMPTS="${CI_MAX_FIX_ATTEMPTS:-2}"
 CI_FAILURE_LOG_LINES="${CI_FAILURE_LOG_LINES:-200}"
 PARALLEL_REPOS="${PARALLEL_REPOS:-3}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+IDEA_PROCESSOR_SCRIPT="${IDEA_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_ideas.sh}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -102,15 +107,14 @@ if ! [[ "$PARALLEL_REPOS" =~ ^[1-9][0-9]*$ ]]; then
   exit 1
 fi
 
-if ! [[ "$MAX_HOURS" =~ ^[0-9]+$ ]]; then
-  echo "MAX_HOURS must be a non-negative integer (0 means unlimited), got: $MAX_HOURS" >&2
+if ! [[ "$IDEA_BOOTSTRAP_ENABLED" =~ ^[01]$ ]]; then
+  echo "IDEA_BOOTSTRAP_ENABLED must be 0 or 1, got: $IDEA_BOOTSTRAP_ENABLED" >&2
   exit 1
 fi
 
-repo_count="$(jq '.repos | length' "$REPOS_FILE")"
-if [[ "$repo_count" -eq 0 ]]; then
-  echo "No repos found in $REPOS_FILE" | tee -a "$RUN_LOG"
-  exit 0
+if ! [[ "$MAX_HOURS" =~ ^[0-9]+$ ]]; then
+  echo "MAX_HOURS must be a non-negative integer (0 means unlimited), got: $MAX_HOURS" >&2
+  exit 1
 fi
 
 start_epoch="$(date +%s)"
@@ -126,6 +130,32 @@ runtime_deadline_hit() {
   local now_epoch
   now_epoch="$(date +%s)"
   (( now_epoch >= deadline_epoch ))
+}
+
+repo_count_from_file() {
+  jq '.repos | length' "$REPOS_FILE" 2>/dev/null || echo 0
+}
+
+run_idea_processor() {
+  if [[ "$IDEA_BOOTSTRAP_ENABLED" != "1" ]]; then
+    return 0
+  fi
+  if [[ ! -x "$IDEA_PROCESSOR_SCRIPT" ]]; then
+    log_event WARN "Idea processor not executable: $IDEA_PROCESSOR_SCRIPT"
+    return 0
+  fi
+
+  log_event INFO "IDEAS process file=$IDEAS_FILE script=$IDEA_PROCESSOR_SCRIPT"
+  if ! IDEAS_FILE="$IDEAS_FILE" \
+      REPOS_FILE="$REPOS_FILE" \
+      CODE_ROOT="$CODE_ROOT" \
+      MODEL="$MODEL" \
+      CODEX_SANDBOX_FLAG="$CODEX_SANDBOX_FLAG" \
+      "$IDEA_PROCESSOR_SCRIPT" >>"$RUN_LOG" 2>&1; then
+    log_event WARN "IDEAS failed file=$IDEAS_FILE"
+  else
+    log_event INFO "IDEAS complete file=$IDEAS_FILE"
+  fi
 }
 
 log_event() {
@@ -201,6 +231,8 @@ trap cleanup EXIT
 log_event INFO "Run ID: $RUN_ID"
 log_event INFO "PID: $$"
 log_event INFO "Repos file: $REPOS_FILE"
+run_idea_processor
+repo_count="$(repo_count_from_file)"
 log_event INFO "Repo count: $repo_count"
 if (( MAX_HOURS == 0 )); then
   log_event INFO "Max hours: unlimited"
@@ -210,6 +242,9 @@ fi
 log_event INFO "Max cycles: $MAX_CYCLES"
 log_event INFO "Tracker file: $TRACKER_FILE_NAME"
 log_event INFO "Tasks per repo session: $TASKS_PER_REPO"
+log_event INFO "Ideas file: $IDEAS_FILE"
+log_event INFO "Idea bootstrap enabled: $IDEA_BOOTSTRAP_ENABLED"
+log_event INFO "Code root: $CODE_ROOT"
 log_event INFO "Prompts file: $PROMPTS_FILE"
 log_event INFO "Core prompt file: $CORE_PROMPT_FILE"
 log_event INFO "Model: $MODEL"
@@ -229,6 +264,11 @@ log_event INFO "Status file: $STATUS_FILE"
 log_event INFO "Worker status dir: $WORKER_STATUS_DIR"
 log_event INFO "Repo lock dir: $REPO_LOCK_DIR"
 update_status "starting"
+
+if [[ "$repo_count" -eq 0 ]]; then
+  echo "No repos found in $REPOS_FILE" | tee -a "$RUN_LOG"
+  exit 0
+fi
 
 has_uncommitted_changes() {
   local repo_path="$1"
@@ -968,6 +1008,8 @@ while :; do
 
   log_event INFO "--- Cycle $cycle ---"
   update_status "running_cycle_$cycle" "$CURRENT_REPO" "$CURRENT_PATH" "$CURRENT_PASS"
+
+  run_idea_processor
 
   CYCLE_DEADLINE_HIT=0
   run_cycle_repos "$cycle"
