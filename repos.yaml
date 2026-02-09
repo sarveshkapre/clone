@@ -1,9 +1,37 @@
 {
-  "generated_at": "2026-02-09T03:13:44Z",
+  "generated_at": "2026-02-09T03:26:37Z",
   "code_root": "/Users/sarvesh/code",
   "activity_window_days": 60,
   "threshold_date": "2025-12-10",
   "repos": [
+    {
+      "name": "gptx",
+      "path": "/Users/sarvesh/code/gptx",
+      "branch": "main",
+      "last_commit": "2026-02-08T19:26:12-08:00",
+      "objective": "Keep gptx production-ready. Current focus: GPTX. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "notion-workspace-synth",
+      "path": "/Users/sarvesh/code/notion-workspace-synth",
+      "branch": "main",
+      "last_commit": "2026-02-08T19:25:47-08:00",
+      "objective": "Keep notion-workspace-synth production-ready. Current focus: Notion Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "slack-workspace-synth",
+      "path": "/Users/sarvesh/code/slack-workspace-synth",
+      "branch": "main",
+      "last_commit": "2026-02-08T19:16:24-08:00",
+      "objective": "Keep slack-workspace-synth production-ready. Current focus: Slack Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "agent-swarm-control-panel",
+      "path": "/Users/sarvesh/code/agent-swarm-control-panel",
+      "branch": "main",
+      "last_commit": "2026-02-08T19:14:57-08:00",
+      "objective": "Keep agent-swarm-control-panel production-ready. Current focus: Agent Swarm Control Panel. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
     {
       "name": "ai-headshot-studio",
       "path": "/Users/sarvesh/code/ai-headshot-studio",
@@ -201,39 +229,11 @@
       "objective": "Keep feed-jarvis production-ready. Current focus: Feed Jarvis Studio (`feed-jarvis`). Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
-      "name": "agent-swarm-control-panel",
-      "path": "/Users/sarvesh/code/agent-swarm-control-panel",
-      "branch": "main",
-      "last_commit": "2026-02-08T15:19:39-08:00",
-      "objective": "Keep agent-swarm-control-panel production-ready. Current focus: Agent Swarm Control Panel. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "slack-workspace-synth",
-      "path": "/Users/sarvesh/code/slack-workspace-synth",
-      "branch": "main",
-      "last_commit": "2026-02-08T15:15:55-08:00",
-      "objective": "Keep slack-workspace-synth production-ready. Current focus: Slack Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "gptx",
-      "path": "/Users/sarvesh/code/gptx",
-      "branch": "main",
-      "last_commit": "2026-02-08T15:13:05-08:00",
-      "objective": "Keep gptx production-ready. Current focus: GPTX. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
       "name": "jwt-workbench",
       "path": "/Users/sarvesh/code/jwt-workbench",
       "branch": "main",
       "last_commit": "2026-02-08T15:07:20-08:00",
       "objective": "Keep jwt-workbench production-ready. Current focus: JWT Workbench. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "notion-workspace-synth",
-      "path": "/Users/sarvesh/code/notion-workspace-synth",
-      "branch": "main",
-      "last_commit": "2026-02-08T15:03:01-08:00",
-      "objective": "Keep notion-workspace-synth production-ready. Current focus: Notion Workspace Synth. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "google-workspace-synth",
