@@ -12,6 +12,7 @@ Goal:
 
 - Discovers recently active repos and builds `repos.yaml`.
 - Runs maintenance/product-improvement passes per repo.
+- Runs a default market-aware strategy loop (bounded competitor scan, gap mapping, scored prioritization, then execution).
 - Uses steering prompts + a core directive for decision quality.
 - Tracks per-repo backlog in `CLONE_FEATURES.md`.
 - Maintains durable operating docs: `AGENTS.md`, `PROJECT_MEMORY.md`, and `INCIDENTS.md`.

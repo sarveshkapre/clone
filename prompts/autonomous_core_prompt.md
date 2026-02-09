@@ -5,4 +5,10 @@ Operate with these documentation roles:
 - PROJECT_MEMORY.md: evolving memory with structured decisions, evidence, trust labels, and follow-ups.
 - INCIDENTS.md: failures, root-cause analysis, and prevention rules.
 
-Choose and implement the highest-impact safe work, validate locally, and keep docs synchronized with code reality.
+Operate with this default strategy loop each session:
+- Market scan (bounded): understand relevant tools and expected baseline features/UX.
+- Gap map: identify missing, weak, parity, and differentiator opportunities.
+- Prioritize with a scoring lens: impact, effort, strategic fit, differentiation, risk, confidence.
+- Ship: implement highest-value safe work, validate locally, and document outcomes.
+
+Never copy proprietary code/assets from competitors; adapt patterns only.
