@@ -54,23 +54,84 @@ tail -f /Users/sarvesh/code/Clone/logs/run-<RUN_ID>-events.log
 cat /Users/sarvesh/code/Clone/logs/run-<RUN_ID>-status.txt
 ```
 
-4) Check commits across all tracked repos in last 8 hours:
+## Observability Commands (Generic)
+
+Set shared variables once:
 
 ```bash
-jq -r '.repos[].path' /Users/sarvesh/code/Clone/repos.yaml | while IFS= read -r repo; do
-  git -C "$repo" log --since="8 hours ago" --pretty=format:'%ct%x09'"$repo"'%x09%h%x09%an%x09%s'
-done | sort -nr -k1,1 | while IFS=$'\t' read -r ts repo hash author subject; do
-  printf "%s | %s | %s | %s | %s\n" "$(date -r "$ts" '+%Y-%m-%d %H:%M:%S')" "$repo" "$hash" "$author" "$subject"
-done
+CLONE_ROOT="${CLONE_ROOT:-$HOME/code/Clone}"
+REPOS_FILE="${REPOS_FILE:-$CLONE_ROOT/repos.yaml}"
+WORK_ROOT="${WORK_ROOT:-$HOME/code}"
 ```
 
-5) Check only commit counts per repo in last 8 hours:
+Show running Clone processes with shorter paths:
 
 ```bash
-jq -r '.repos[].path' /Users/sarvesh/code/Clone/repos.yaml | while IFS= read -r repo; do
+pgrep -fl run_clone_loop.sh | sed "s|$WORK_ROOT/||g"
+pids="$(pgrep -f run_clone_loop.sh | paste -sd, -)"
+if [[ -n "$pids" ]]; then
+  ps -o pid=,etime=,command= -p "$pids" | sed "s|$WORK_ROOT/||g"
+else
+  echo "No run_clone_loop.sh process found"
+fi
+```
+
+Commit counts in the last 8 hours (simple):
+
+```bash
+jq -r '.repos[].path' "$REPOS_FILE" | while IFS= read -r repo; do
   c=$(git -C "$repo" rev-list --count --since="8 hours ago" HEAD 2>/dev/null || echo 0)
-  [ "$c" -gt 0 ] && echo "$c  $repo"
-done | sort -nr
+  [ "$c" -gt 0 ] && printf "%s\t%s\n" "$c" "$repo"
+done | sort -nr -k1,1
+```
+
+Commit counts in a 4-column compact table (`commits | repo || commits | repo`):
+
+```bash
+tmp="$(mktemp)"
+jq -r '.repos[].path' "$REPOS_FILE" | while IFS= read -r repo; do
+  c=$(git -C "$repo" rev-list --count --since="8 hours ago" HEAD 2>/dev/null || echo 0)
+  [ "$c" -gt 0 ] && printf "%s\t%s\n" "$c" "$(basename "$repo")"
+done | sort -nr -k1,1 > "$tmp"
+
+paste -d $'\t' \
+  <(awk -F'\t' 'NR%2==1{print $1"\t"$2}' "$tmp") \
+  <(awk -F'\t' 'NR%2==0{print $1"\t"$2}' "$tmp") \
+| awk -F'\t' '
+function repeat(ch,n,  s,i){s=""; for(i=0;i<n;i++) s=s ch; return s}
+function center(s,w,  l,r,p){l=length(s); if(l>=w) return s; p=w-l; r=int(p/2); return repeat(" ",p-r) s repeat(" ",r)}
+BEGIN{
+  cW=7; rW=28
+  printf "%s | %-*s || %s | %-*s\n", center("COMMITS",cW), rW, "REPO", center("COMMITS",cW), rW, "REPO"
+  printf "%s-+-%s-++-%s-+-%s\n", repeat("-",cW), repeat("-",rW), repeat("-",cW), repeat("-",rW)
+}
+{
+  c1=$1; r1=$2; c2=$3; r2=$4
+  if(c2==""){c2="-"; r2=""}
+  printf "%s | %-*s || %s | %-*s\n", center(c1,cW), rW, r1, center(c2,cW), rW, r2
+}'
+rm -f "$tmp"
+```
+
+Live append-only commit watcher (prints only new commits as they appear):
+
+```bash
+seen_file="$(mktemp)"
+trap 'rm -f "$seen_file"' EXIT
+
+while true; do
+  jq -r '.repos[].path' "$REPOS_FILE" | while IFS= read -r repo; do
+    repo_name="$(basename "$repo")"
+    git -C "$repo" log --since="2 hours ago" --pretty=format:'%ct%x09'"$repo_name"'%x09%h%x09%s'
+  done | sort -n -k1,1 | while IFS=$'\t' read -r ts repo_name hash subject; do
+    key="${repo_name}:${hash}"
+    if ! grep -qxF "$key" "$seen_file"; then
+      echo "$key" >> "$seen_file"
+      printf "%s | %s | %s | %s\n" "$(date -r "$ts" '+%Y-%m-%d %H:%M:%S')" "$repo_name" "$hash" "$subject"
+    fi
+  done
+  sleep 20
+done
 ```
 
 ## Key Runtime Knobs
