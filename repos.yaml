@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-09T00:38:13Z",
+  "generated_at": "2026-02-09T00:56:33Z",
   "code_root": "/Users/sarvesh/code",
   "activity_window_days": 60,
   "threshold_date": "2025-12-10",
@@ -8,15 +8,57 @@
       "name": "robopet",
       "path": "/Users/sarvesh/code/robopet",
       "branch": "main",
-      "last_commit": "2026-02-09T00:38:12Z",
+      "last_commit": "2026-02-09T00:56:32Z",
       "objective": "Keep robopet production-ready. Current focus: robopet. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "llm-news-feed",
       "path": "/Users/sarvesh/code/llm-news-feed",
       "branch": "main",
-      "last_commit": "2026-02-09T00:38:11Z",
+      "last_commit": "2026-02-09T00:56:31Z",
       "objective": "Keep llm-news-feed production-ready. Current focus: Signal Feed (LLM-native news feed). Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "postman-clone",
+      "path": "/Users/sarvesh/code/postman-clone",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:56:16-08:00",
+      "objective": "Keep postman-clone production-ready. Current focus: Postman Clone (`postman-clone`). Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "fleet-mdm",
+      "path": "/Users/sarvesh/code/fleet-mdm",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:55:27-08:00",
+      "objective": "Keep fleet-mdm production-ready. Current focus: FleetMDM. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "collaborative-design-canvas",
+      "path": "/Users/sarvesh/code/collaborative-design-canvas",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:55:00-08:00",
+      "objective": "Keep collaborative-design-canvas production-ready. Current focus: Collaborative Design Canvas. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "openapi-fuzzer",
+      "path": "/Users/sarvesh/code/openapi-fuzzer",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:50:51-08:00",
+      "objective": "Keep openapi-fuzzer production-ready. Current focus: OpenAPI Fuzzer. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "regex-explainer",
+      "path": "/Users/sarvesh/code/regex-explainer",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:45:46-08:00",
+      "objective": "Keep regex-explainer production-ready. Current focus: Regex Explainer. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "llm-agent-playground",
+      "path": "/Users/sarvesh/code/llm-agent-playground",
+      "branch": "main",
+      "last_commit": "2026-02-08T16:43:35-08:00",
+      "objective": "Keep llm-agent-playground production-ready. Current focus: LLM Agent Playground. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "write-for-humans-ais",
@@ -24,13 +66,6 @@
       "branch": "main",
       "last_commit": "2026-02-08T16:37:57-08:00",
       "objective": "Keep write-for-humans-ais production-ready. Current focus: Write for Humans + AIs. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "llm-agent-playground",
-      "path": "/Users/sarvesh/code/llm-agent-playground",
-      "branch": "main",
-      "last_commit": "2026-02-08T16:37:51-08:00",
-      "objective": "Keep llm-agent-playground production-ready. Current focus: LLM Agent Playground. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
       "name": "pcap-inspector",
@@ -327,41 +362,6 @@
       "objective": "Keep 3d-object-rendering production-ready. Current focus: Artifact Viewer. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
-      "name": "regex-explainer",
-      "path": "/Users/sarvesh/code/regex-explainer",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:21:37-08:00",
-      "objective": "Keep regex-explainer production-ready. Current focus: Regex Explainer. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "openapi-fuzzer",
-      "path": "/Users/sarvesh/code/openapi-fuzzer",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:20:47-08:00",
-      "objective": "Keep openapi-fuzzer production-ready. Current focus: OpenAPI Fuzzer. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "fleet-mdm",
-      "path": "/Users/sarvesh/code/fleet-mdm",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:19:47-08:00",
-      "objective": "Keep fleet-mdm production-ready. Current focus: FleetMDM. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "collaborative-design-canvas",
-      "path": "/Users/sarvesh/code/collaborative-design-canvas",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:19:34-08:00",
-      "objective": "Keep collaborative-design-canvas production-ready. Current focus: Collaborative Design Canvas. Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
-      "name": "postman-clone",
-      "path": "/Users/sarvesh/code/postman-clone",
-      "branch": "main",
-      "last_commit": "2026-01-31T22:19:22-08:00",
-      "objective": "Keep postman-clone production-ready. Current focus: Postman Clone (`postman-clone`). Find the highest-impact pending work, implement it, test it, and push to main."
-    },
-    {
       "name": "endpoint-perf-agent",
       "path": "/Users/sarvesh/code/endpoint-perf-agent",
       "branch": "main",
@@ -474,11 +474,88 @@
       "objective": "Keep caisi-cyber-evals production-ready. Current focus: CAISI Cyber Evaluations. Find the highest-impact pending work, implement it, test it, and push to main."
     },
     {
+      "name": "nyaya-ai",
+      "path": "/Users/sarvesh/code/nyaya-ai",
+      "branch": "main",
+      "last_commit": "2024-09-01T16:03:47-07:00",
+      "objective": "Keep nyaya-ai production-ready. Current focus: Next.js + Supabase Auth + Langchain + Stripe starter code. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
       "name": "SecEval",
       "path": "/Users/sarvesh/code/SecEval",
       "branch": "main",
       "last_commit": "2024-04-03T09:45:21+08:00",
       "objective": "Keep SecEval production-ready. Current focus: SecEval: A Comprehensive Benchmark for Evaluating Cybersecurity Knowledge of Foundation Models. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "ssrf_scanner",
+      "path": "/Users/sarvesh/code/ssrf_scanner",
+      "branch": "main",
+      "last_commit": "2023-04-16T18:37:45-07:00",
+      "objective": "Keep ssrf_scanner production-ready. Current focus: SSRF Scanner. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "MDEASM",
+      "path": "/Users/sarvesh/code/MDEASM",
+      "branch": "main",
+      "last_commit": "2023-04-10T11:30:21-06:00",
+      "objective": "Keep MDEASM production-ready. Current focus: MDEASM. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "shadowserver-python-api",
+      "path": "/Users/sarvesh/code/shadowserver-python-api",
+      "branch": "main",
+      "last_commit": "2023-04-10T10:49:19-07:00",
+      "objective": "Keep shadowserver-python-api production-ready. Current focus: shadowserver-python-api. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "idor-detector",
+      "path": "/Users/sarvesh/code/idor-detector",
+      "branch": "main",
+      "last_commit": "2023-04-06T22:42:59-07:00",
+      "objective": "Keep idor-detector production-ready. Current focus: IDOR Detector. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "BotGuardian",
+      "path": "/Users/sarvesh/code/BotGuardian",
+      "branch": "main",
+      "last_commit": "2023-04-06T22:41:53-07:00",
+      "objective": "Keep BotGuardian production-ready. Current focus: BotDefender. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "chatgpt-arxiv",
+      "path": "/Users/sarvesh/code/chatgpt-arxiv",
+      "branch": "main",
+      "last_commit": "2023-04-06T22:38:40-07:00",
+      "objective": "Keep chatgpt-arxiv production-ready. Current focus: chatgpt-arxiv. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "GPT-X",
+      "path": "/Users/sarvesh/code/GPT-X",
+      "branch": "main",
+      "last_commit": "2023-03-27T15:20:49-07:00",
+      "objective": "Keep GPT-X production-ready. Current focus: GPT-X. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "product-security-playground",
+      "path": "/Users/sarvesh/code/product-security-playground",
+      "branch": "main",
+      "last_commit": "2020-12-31T10:41:21-08:00",
+      "objective": "Keep product-security-playground production-ready. Current focus: Product Security Playground. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "Web-Crawler-Scraper",
+      "path": "/Users/sarvesh/code/Web-Crawler-Scraper",
+      "branch": "main",
+      "last_commit": "2017-02-13T09:27:21-05:00",
+      "objective": "Keep Web-Crawler-Scraper production-ready. Current focus: webcrawler. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "Strong-Password-and-Password-Hash-Generator",
+      "path": "/Users/sarvesh/code/Strong-Password-and-Password-Hash-Generator",
+      "branch": "main",
+      "last_commit": "2017-02-11T19:19:37-05:00",
+      "objective": "Keep Strong-Password-and-Password-Hash-Generator production-ready. Current focus: Strong Password and Password Hash Generator. Find the highest-impact pending work, implement it, test it, and push to main."
     }
   ]
 }
