@@ -51,6 +51,25 @@ tail -f /Users/sarvesh/code/Clone/logs/run-<RUN_ID>-events.log
 cat /Users/sarvesh/code/Clone/logs/run-<RUN_ID>-status.txt
 ```
 
+4) Check commits across all tracked repos in last 8 hours:
+
+```bash
+jq -r '.repos[].path' /Users/sarvesh/code/Clone/repos.yaml | while IFS= read -r repo; do
+  git -C "$repo" log --since="8 hours ago" --pretty=format:'%ct%x09'"$repo"'%x09%h%x09%an%x09%s'
+done | sort -nr -k1,1 | while IFS=$'\t' read -r ts repo hash author subject; do
+  printf "%s | %s | %s | %s | %s\n" "$(date -r "$ts" '+%Y-%m-%d %H:%M:%S')" "$repo" "$hash" "$author" "$subject"
+done
+```
+
+5) Check only commit counts per repo in last 8 hours:
+
+```bash
+jq -r '.repos[].path' /Users/sarvesh/code/Clone/repos.yaml | while IFS= read -r repo; do
+  c=$(git -C "$repo" rev-list --count --since="8 hours ago" HEAD 2>/dev/null || echo 0)
+  [ "$c" -gt 0 ] && echo "$c  $repo"
+done | sort -nr
+```
+
 ## Key Runtime Knobs
 
 - `PARALLEL_REPOS`: concurrent repos (default `3`)
