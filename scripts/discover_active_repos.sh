@@ -4,8 +4,8 @@ set -euo pipefail
 CODE_ROOT="${1:-/Users/sarvesh/code}"
 WINDOW_DAYS="${WINDOW_DAYS:-60}"
 OUTPUT_FILE="${OUTPUT_FILE:-repos.yaml}"
-IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-sarveshkapre.github.io}"
-PINNED_REPOS_CSV="${PINNED_REPOS_CSV:-EchoTrail,CritPt,SecEval,aegis,caisi-cyber-evals,compression,evals,frontier-evals,infosec-evals,llm-news-feed,research-playground,robopet,BotGuardian,GPT-X,MDEASM,Strong-Password-and-Password-Hash-Generator,Web-Crawler-Scraper,chatgpt-arxiv,idor-detector,nyaya-ai,product-security-playground,shadowserver-python-api,ssrf_scanner}"
+IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-sarveshkapre.github.io,robopet,openapi-fuzzer,regex-explainer,write-for-humans-ais,rag-sanitizer,ssrf-sentinel,bas-orchestrator,github-project-pilot,log-redactor,ai_factory,projects-registry,prompt-injection-firewall,secret-scanner-plus,webproxy-suite,repo-scaffolder,aegis,infosec-evals,compression,frontier-evals,CritPt,evals,caisi-cyber-evals,SecEval,ssrf_scanner,shadowserver-python-api,idor-detector,BotGuardian,chatgpt-arxiv,GPT-X,product-security-playground}"
+PINNED_REPOS_CSV="${PINNED_REPOS_CSV:-EchoTrail,llm-news-feed,research-playground,MDEASM,Strong-Password-and-Password-Hash-Generator,Web-Crawler-Scraper,nyaya-ai}"
 
 if [[ ! -d "$CODE_ROOT" ]]; then
   echo "Code root not found: $CODE_ROOT" >&2
