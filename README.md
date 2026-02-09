@@ -13,7 +13,8 @@ Goal:
 - Discovers recently active repos and builds `repos.yaml`.
 - Runs maintenance/product-improvement passes per repo.
 - Uses steering prompts + a core directive for decision quality.
-- Tracks per-repo work memory in `CLONE_FEATURES.md`.
+- Tracks per-repo backlog in `CLONE_FEATURES.md`.
+- Maintains durable operating docs: `AGENTS.md`, `PROJECT_MEMORY.md`, and `INCIDENTS.md`.
 - Runs local verification (lint/tests/build and smoke paths like API/CLI checks when feasible) and records evidence in pass output.
 - Pushes directly to `main`.
 - Watches GitHub Actions for pushed commits and attempts CI remediation.
@@ -79,8 +80,18 @@ done | sort -nr
 - `MAX_CYCLES`: number of full passes across all repos (`1 cycle = 1 touch per repo`)
 - `MAX_HOURS`: total runtime cap (`0` = unlimited, default)
 - `IDEA_BOOTSTRAP_ENABLED`: `1` to process `ideas.yaml` into new projects (default)
+- `PROJECT_MEMORY_MAX_LINES`: compaction threshold for `PROJECT_MEMORY.md` (default `500`)
 - `CI_AUTOFIX_ENABLED`: `1` to auto-remediate failing GitHub Actions
 - `PROMPTS_FILE` / `CORE_PROMPT_FILE`: steering and core autonomous prompts
+
+## Repository Memory Policy
+
+For each tracked repository, the loop enforces:
+- `AGENTS.md`: stable operating contract (core policy sections are not rewritten automatically).
+- `PROJECT_MEMORY.md`: evolving structured memory (decisions, evidence, trust labels, verification history).
+- `INCIDENTS.md`: true failure/mistake records with root cause and prevention rules.
+
+When `PROJECT_MEMORY.md` exceeds `PROJECT_MEMORY_MAX_LINES`, the loop auto-compacts it and archives snapshots under `.clone_memory_archive/`.
 
 ## New Idea Intake
 
