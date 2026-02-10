@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPOS_FILE="${REPOS_FILE:-repos.yaml}"
+if [[ -n "${REPOS_FILE:-}" ]]; then
+  : # user-specified
+elif [[ -f "repos.runtime.yaml" ]]; then
+  REPOS_FILE="repos.runtime.yaml"
+else
+  REPOS_FILE="repos.yaml"
+fi
 MAX_HOURS="${MAX_HOURS:-0}"
 MAX_CYCLES="${MAX_CYCLES:-1}"
 MODEL="${MODEL:-gpt-5.3-codex}"

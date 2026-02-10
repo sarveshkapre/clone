@@ -12,6 +12,7 @@
 - For each meaningful change, run local runnable verification paths (including API/CLI smoke checks where possible) and record exact evidence.
 - Always look for opportunities to simplify architecture, remove dead/unused code, and improve algorithmic efficiency.
 - Keep AGENTS.md, README.md, and other relevant documentation aligned with behavior changes.
+- Keep README.md short and skimmable (1-2 screens). Put deep details and long command recipes into docs/ files and link from README.md.
 - Keep AGENTS.md stable; only adjust mutable facts sections unless a policy update is explicitly required.
 - Preserve project memory in PROJECT_MEMORY.md using structured entries (decision, why, evidence, commit, confidence, trust label).
 - Capture mistakes and prevention rules in INCIDENTS.md when there is a real failure, regression, or reliability incident.

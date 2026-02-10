@@ -1,202 +1,62 @@
-# Clone Orchestrator
+# Clone
 
-This project runs Codex in an autonomous loop across active repositories in `/Users/sarvesh/code`.
+Autonomous Codex orchestrator that runs a repeatable “plan -> implement -> verify -> push -> fix CI” loop across many repos.
 
-Goal:
-- operate Codex in a mostly hands-off mode
-- keep repositories updated and improving
-- prioritize high-impact work while preserving safety and reliability
-- fix CI failures automatically after pushes when possible
+## What It Does (High Level)
 
-## What It Does
+- Builds a queue of active repositories (`repos.runtime.yaml` by default).
+- Iterates repos (optionally in parallel), shipping small, verified improvements.
+- Pushes directly to `main` (no PRs) and uses GitHub Actions as a correctness signal (auto-fix when safe).
+- Persists durable context in per-repo docs: `AGENTS.md`, `PROJECT_MEMORY.md`, `INCIDENTS.md`.
 
-- Discovers recently active repos and builds `repos.yaml`.
-- Runs maintenance/product-improvement passes per repo.
-- Runs a default market-aware strategy loop (bounded competitor scan, gap mapping, scored prioritization, then execution).
-- Uses steering prompts + a core directive for decision quality.
-- Tracks per-repo backlog in `CLONE_FEATURES.md`.
-- Maintains durable operating docs: `AGENTS.md`, `PROJECT_MEMORY.md`, and `INCIDENTS.md`.
-- Runs local verification (lint/tests/build and smoke paths like API/CLI checks when feasible) and records evidence in pass output.
-- Pushes directly to `main`.
-- Watches GitHub Actions for pushed commits and attempts CI remediation.
-- Logs run, event, status, and per-pass details under `logs/`.
+## Features
 
-## Main Files
+- Parallel execution across repos (`PARALLEL_REPOS`).
+- Per-repo task planning with a cap (`TASKS_PER_REPO`, may do fewer).
+- Local verification when feasible (tests/lint/build/smoke checks).
+- CI self-healing loop (bounded retries).
+- Structured logs and status files under `logs/`.
 
-- `scripts/discover_active_repos.sh`
-- `scripts/run_clone_loop.sh`
-- `repos.yaml`
-- `prompts/repo_steering.md`
-- `prompts/autonomous_core_prompt.md`
-- `scripts/process_ideas.sh`
-- `ideas.yaml`
+## Quickstart (Local)
 
-## How To Run
-
-1) Refresh active repo list:
-
-```bash
-cd /Users/sarvesh/code/Clone
-/Users/sarvesh/code/Clone/scripts/discover_active_repos.sh /Users/sarvesh/code
-```
-
-2) Start autonomous loop (example):
-
-```bash
-cd /Users/sarvesh/code/Clone
-MODEL=gpt-5.3-codex PARALLEL_REPOS=3 TASKS_PER_REPO=10 MAX_CYCLES=3 /Users/sarvesh/code/Clone/scripts/run_clone_loop.sh
-```
-
-3) Monitor:
-
-```bash
-tail -f /Users/sarvesh/code/Clone/logs/run-<RUN_ID>.log
-tail -f /Users/sarvesh/code/Clone/logs/run-<RUN_ID>-events.log
-cat /Users/sarvesh/code/Clone/logs/run-<RUN_ID>-status.txt
-```
-
-## Observability Commands (Generic)
-
-Set shared variables once:
+Prereqs: `codex` CLI, `jq`, `git`, and (on macOS) `caffeinate`. Optional: `gh` for GitHub signals/CI auto-fix.
 
 ```bash
 CLONE_ROOT="${CLONE_ROOT:-$HOME/code/Clone}"
-REPOS_FILE="${REPOS_FILE:-$CLONE_ROOT/repos.yaml}"
 WORK_ROOT="${WORK_ROOT:-$HOME/code}"
+
+cd "$CLONE_ROOT"
+git pull --rebase
+
+# 1) Discover active repos (writes repos.runtime.yaml by default)
+"$CLONE_ROOT/scripts/discover_active_repos.sh" "$WORK_ROOT"
+
+# 2) Run a few full passes (3 repos in parallel)
+RUN_TAG="$(date +%Y%m%d-%H%M%S)"
+nohup caffeinate -dimsu /bin/zsh -lc "cd '$CLONE_ROOT' && MODEL=gpt-5.3-codex PARALLEL_REPOS=3 MAX_CYCLES=3 '$CLONE_ROOT/scripts/run_clone_loop.sh'" \
+  > "$CLONE_ROOT/logs/launcher-${RUN_TAG}.log" 2>&1 &
 ```
 
-Show running Clone processes with shorter paths:
+## Deploy / Run Headless
 
-```bash
-pgrep -fl run_clone_loop.sh | sed "s|$WORK_ROOT/||g"
-pids="$(pgrep -f run_clone_loop.sh | paste -sd, -)"
-if [[ -n "$pids" ]]; then
-  ps -o pid=,etime=,command= -p "$pids" | sed "s|$WORK_ROOT/||g"
-else
-  echo "No run_clone_loop.sh process found"
-fi
-```
+Clone is a local-first orchestrator. “Deploy” usually means running it on a dedicated Mac/Linux box via `nohup`, `tmux`, or a system service.
 
-Nerdy runtime banner (`X HRS Y MINS`) plus process telemetry:
+- macOS: use `caffeinate` to prevent sleep.
+- Linux: prefer `tmux`/`screen` or `systemd`.
 
-```bash
-WORK_ROOT="${WORK_ROOT:-$HOME/code}"
-pids="$(pgrep -f run_clone_loop.sh | paste -sd, -)"
+## Monitor / Debug
 
-if [[ -z "$pids" ]]; then
-  printf "\033[1;31m[C O D E X  R U N T I M E] REACTOR OFFLINE\033[0m\n"
-else
-  ps -o pid=,etime=,command= -p "$pids" | sed "s|$WORK_ROOT/||g" | awk '
-  function etime_to_sec(e, n,a,d,h,m,s){
-    n=split(e,a,/[-:]/)
-    if (index(e,"-"))      { d=a[1]; h=a[2]; m=a[3]; s=a[4] }
-    else if (n==3)         { d=0;    h=a[1]; m=a[2]; s=a[3] }
-    else                   { d=0;    h=0;    m=a[1]; s=a[2] }
-    return d*86400 + h*3600 + m*60 + s
-  }
-  BEGIN{ green="\033[1;32m"; reset="\033[0m"; bold="\033[1m" }
-  {
-    pid=$1; et=$2
-    sub($1 FS $2 FS, "", $0); cmd=$0
-    sec=etime_to_sec(et)
-    mins=int(sec/60); hh=int(sec/3600); mm=int((sec%3600)/60)
-    rows[++n]=sprintf("%010d\t%-6s | %7d | %02d:%02d   | %s", sec, pid, mins, hh, mm, cmd)
-    if (sec>max) max=sec
-  }
-  END{
-    H=int(max/3600); M=int((max%3600)/60)
-    print green bold "████ CODEX RUNTIME: " H " HRS " M " MINS ████" reset
-    print green bold "=== CODEX REACTOR TELEMETRY ===" reset
-    printf "%-6s | %-7s | %-7s | %s\n", "PID", "mins", "hh:mm", "command"
-    print  "------+---------+---------+-------------------------------"
-    for(i=1;i<=n;i++) print rows[i] | "sort -r | cut -f2-"
-    close("sort -r | cut -f2-")
-  }'
-fi
-```
+See `docs/observability.md` for:
+- tailing logs
+- “nerdy runtime telemetry”
+- commit tables + live commit watcher
 
-Commit counts in the last 8 hours (simple):
+## Docs
 
-```bash
-jq -r '.repos[].path' "$REPOS_FILE" | while IFS= read -r repo; do
-  c=$(git -C "$repo" rev-list --count --since="8 hours ago" HEAD 2>/dev/null || echo 0)
-  [ "$c" -gt 0 ] && printf "%s\t%s\n" "$c" "$repo"
-done | sort -nr -k1,1
-```
-
-Commit counts in a 4-column compact table (`commits | repo || commits | repo`):
-
-```bash
-tmp="$(mktemp)"
-jq -r '.repos[].path' "$REPOS_FILE" | while IFS= read -r repo; do
-  c=$(git -C "$repo" rev-list --count --since="8 hours ago" HEAD 2>/dev/null || echo 0)
-  [ "$c" -gt 0 ] && printf "%s\t%s\n" "$c" "$(basename "$repo")"
-done | sort -nr -k1,1 > "$tmp"
-
-paste -d $'\t' \
-  <(awk -F'\t' 'NR%2==1{print $1"\t"$2}' "$tmp") \
-  <(awk -F'\t' 'NR%2==0{print $1"\t"$2}' "$tmp") \
-| awk -F'\t' '
-function repeat(ch,n,  s,i){s=""; for(i=0;i<n;i++) s=s ch; return s}
-function center(s,w,  l,r,p){l=length(s); if(l>=w) return s; p=w-l; r=int(p/2); return repeat(" ",p-r) s repeat(" ",r)}
-BEGIN{
-  cW=7; rW=28
-  printf "%s | %-*s || %s | %-*s\n", center("COMMITS",cW), rW, "REPO", center("COMMITS",cW), rW, "REPO"
-  printf "%s-+-%s-++-%s-+-%s\n", repeat("-",cW), repeat("-",rW), repeat("-",cW), repeat("-",rW)
-}
-{
-  c1=$1; r1=$2; c2=$3; r2=$4
-  if(c2==""){c2="-"; r2=""}
-  printf "%s | %-*s || %s | %-*s\n", center(c1,cW), rW, r1, center(c2,cW), rW, r2
-}'
-rm -f "$tmp"
-```
-
-Live append-only commit watcher (prints only new commits as they appear):
-
-```bash
-seen_file="$(mktemp)"
-trap 'rm -f "$seen_file"' EXIT
-
-while true; do
-  jq -r '.repos[].path' "$REPOS_FILE" | while IFS= read -r repo; do
-    repo_name="$(basename "$repo")"
-    git -C "$repo" log --since="2 hours ago" --pretty=format:'%ct%x09'"$repo_name"'%x09%h%x09%s'
-  done | sort -n -k1,1 | while IFS=$'\t' read -r ts repo_name hash subject; do
-    key="${repo_name}:${hash}"
-    if ! grep -qxF "$key" "$seen_file"; then
-      echo "$key" >> "$seen_file"
-      printf "%s | %s | %s | %s\n" "$(date -r "$ts" '+%Y-%m-%d %H:%M:%S')" "$repo_name" "$hash" "$subject"
-    fi
-  done
-  sleep 20
-done
-```
-
-## Key Runtime Knobs
-
-- `PARALLEL_REPOS`: concurrent repos (default `3`)
-- `TASKS_PER_REPO`: max planned tasks per repo session (default `10`, may do fewer)
-- `MAX_CYCLES`: number of full passes across all repos (`1 cycle = 1 touch per repo`)
-- `MAX_HOURS`: total runtime cap (`0` = unlimited, default)
-- `IDEA_BOOTSTRAP_ENABLED`: `1` to process `ideas.yaml` into new projects (default)
-- `PROJECT_MEMORY_MAX_LINES`: compaction threshold for `PROJECT_MEMORY.md` (default `500`)
-- `CI_AUTOFIX_ENABLED`: `1` to auto-remediate failing GitHub Actions
-- `PROMPTS_FILE` / `CORE_PROMPT_FILE`: steering and core autonomous prompts
-- `IGNORED_REPOS_CSV`: extra comma-separated excludes (default `sarveshkapre.github.io`)
-
-## Repository Memory Policy
-
-For each tracked repository, the loop enforces:
-- `AGENTS.md`: stable operating contract (core policy sections are not rewritten automatically).
-- `PROJECT_MEMORY.md`: evolving structured memory (decisions, evidence, trust labels, verification history).
-- `INCIDENTS.md`: true failure/mistake records with root cause and prevention rules.
-
-When `PROJECT_MEMORY.md` exceeds `PROJECT_MEMORY_MAX_LINES`, the loop auto-compacts it and archives snapshots under `.clone_memory_archive/`.
-
-## Ignored Repositories
-
-Discovery excludes repos listed in `IGNORED_REPOS_CSV`.
+- `docs/observability.md`
+- `docs/readme_policy.md`
+- `prompts/` (agent behavior)
+- `scripts/` (discovery + loop)
 
 - Use `IGNORED_REPOS_CSV` for durable and one-off overrides.
 - Refresh the queue after edits:
