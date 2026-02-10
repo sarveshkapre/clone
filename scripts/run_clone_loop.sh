@@ -954,6 +954,7 @@ run_repo() {
   local prompt steering_guidance core_guidance viewer_login issue_context ci_context
   local pass_label lock_key lock_dir
   local new_commit_count cleanup_label cleanup_last_message_file cleanup_log_file cleanup_prompt
+  local lock_pid
   name="$(jq -r '.name' <<<"$repo_json")"
   path="$(jq -r '.path' <<<"$repo_json")"
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
@@ -968,10 +969,24 @@ run_repo() {
 
   # Hard lock: never allow two workers to run Codex in the same repo at once.
   if ! mkdir "$lock_dir" 2>/dev/null; then
-    log_event WARN "SKIP repo=$name reason=repo_lock_active cycle=$cycle_id path=$path"
-    return 0
+    lock_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+    if [[ -n "${lock_pid:-}" ]] && kill -0 "$lock_pid" >/dev/null 2>&1; then
+      log_event WARN "SKIP repo=$name reason=repo_lock_active cycle=$cycle_id path=$path"
+      return 0
+    fi
+
+    # Stale lock (worker crashed / exited). Reclaim it.
+    rm -rf "$lock_dir" >/dev/null 2>&1 || true
+    if ! mkdir "$lock_dir" 2>/dev/null; then
+      log_event WARN "SKIP repo=$name reason=repo_lock_active cycle=$cycle_id path=$path"
+      return 0
+    fi
   fi
   printf '%s\n' "$$" >"$lock_dir/pid" 2>/dev/null || true
+  printf '%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$lock_dir/created_at" 2>/dev/null || true
+
+  # Ensure lock is always released even if this worker errors/exits unexpectedly.
+  trap 'rm -rf "$lock_dir" >/dev/null 2>&1 || true; cleanup' EXIT
 
   CURRENT_REPO="$name"
   CURRENT_PATH="$path"
@@ -983,7 +998,6 @@ run_repo() {
   if [[ ! -d "$path/.git" ]]; then
     log_event WARN "SKIP repo=$name reason=missing_git_dir"
     set_status "skipped_repo" "$name" "$path" "$pass_label"
-    rm -rf "$lock_dir" >/dev/null 2>&1 || true
     return 0
   fi
 
@@ -994,7 +1008,6 @@ run_repo() {
   fi
 
   if ! sync_repo_branch "$path" "$branch" "$name"; then
-    rm -rf "$lock_dir" >/dev/null 2>&1 || true
     return 0
   fi
 
@@ -1022,7 +1035,6 @@ run_repo() {
   if runtime_deadline_hit; then
     log_event WARN "STOP repo=$name reason=runtime_deadline"
     set_status "deadline_reached" "$name" "$path" "$pass_label"
-    rm -rf "$lock_dir" >/dev/null 2>&1 || true
     return 0
   fi
 
@@ -1030,7 +1042,6 @@ run_repo() {
   set_status "running_pass" "$name" "$path" "$pass_label"
 
   if ! sync_repo_branch "$path" "$branch" "$name"; then
-    rm -rf "$lock_dir" >/dev/null 2>&1 || true
     return 0
   fi
 
@@ -1218,7 +1229,6 @@ CLEANUP_PROMPT
 
   log_event INFO "END repo=$name pass=$pass_label"
   set_status "repo_complete" "$name" "$path" "$pass_label"
-  rm -rf "$lock_dir" >/dev/null 2>&1 || true
 }
 
 CYCLE_DEADLINE_HIT=0
