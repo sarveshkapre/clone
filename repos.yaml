@@ -1,9 +1,37 @@
 {
-  "generated_at": "2026-02-10T06:06:15.734369Z",
+  "generated_at": "2026-02-10T06:11:54.505759Z",
   "code_root": "/Users/sarvesh/code",
   "activity_window_days": 60,
   "threshold_date": "2025-12-10",
   "repos": [
+    {
+      "name": "speedtest-minimal",
+      "path": "/Users/sarvesh/code/speedtest-minimal",
+      "branch": "main",
+      "last_commit": "2026-02-10T06:11:54.505759Z",
+      "objective": "Ship a browser-first speed test with stability view and safe upload limits. See plan.md."
+    },
+    {
+      "name": "bgp-explorer",
+      "path": "/Users/sarvesh/code/bgp-explorer",
+      "branch": "main",
+      "last_commit": "2026-02-10T06:11:54.505592Z",
+      "objective": "Ship a BGP/ASN/prefix explorer with timestamped evidence. See plan.md."
+    },
+    {
+      "name": "my-ip-metadata",
+      "path": "/Users/sarvesh/code/my-ip-metadata",
+      "branch": "main",
+      "last_commit": "2026-02-10T06:11:54.505387Z",
+      "objective": "Ship a privacy-minded \u201cmy ip\u201d metadata page with clear trust labeling. See plan.md."
+    },
+    {
+      "name": "page-load-lab",
+      "path": "/Users/sarvesh/code/page-load-lab",
+      "branch": "main",
+      "last_commit": "2026-02-10T06:11:54.505089Z",
+      "objective": "Ship a page load profiler (PSI v1; Playwright runner v2). See plan.md."
+    },
     {
       "name": "network-reactor",
       "path": "/Users/sarvesh/code/network-reactor",
