@@ -258,7 +258,7 @@
     },
     {
       "name": "AI_Football_Manager",
-      "path": "/Users/sarvesh/code/AstraView/AI_Football_Manager",
+      "path": "/Users/sarvesh/code/AI_Football_Manager",
       "branch": "main",
       "last_commit": "2026-02-08T14:51:56-08:00",
       "objective": "Keep AI_Football_Manager production-ready. Current focus: AI Football Manager. Find the highest-impact pending work, implement it, test it, and push to main."
