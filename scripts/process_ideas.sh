@@ -2,7 +2,7 @@
 set -euo pipefail
 
 IDEAS_FILE="${IDEAS_FILE:-ideas.yaml}"
-REPOS_FILE="${REPOS_FILE:-repos.yaml}"
+REPOS_FILE="${REPOS_FILE:-repos.runtime.yaml}"
 CODE_ROOT="${CODE_ROOT:-/Users/sarvesh/code}"
 MODEL="${MODEL:-gpt-5.3-codex}"
 MAX_IDEA_TASKS="${MAX_IDEA_TASKS:-10}"
@@ -323,6 +323,11 @@ PROMPT
 create_or_sync_github_repo() {
   local repo_path="$1"
   local repo_name="$2"
+  local visibility="${3:-$IDEA_REPO_VISIBILITY}"
+
+  if [[ "$visibility" != "private" && "$visibility" != "public" ]]; then
+    visibility="$IDEA_REPO_VISIBILITY"
+  fi
 
   if ! command -v gh >/dev/null 2>&1; then
     return 0
@@ -339,13 +344,23 @@ create_or_sync_github_repo() {
   slug="$owner/$repo_name"
 
   if ! gh repo view "$slug" >/dev/null 2>&1; then
-    gh repo create "$slug" "--$IDEA_REPO_VISIBILITY" --source "$repo_path" --remote origin --push >/dev/null 2>&1 || true
+    # Creates the GitHub repo and pushes current local state.
+    gh repo create "$slug" "--$visibility" --source "$repo_path" --remote origin --push >/dev/null 2>&1 || true
   fi
 
-  if git -C "$repo_path" remote get-url origin >/dev/null 2>&1; then
-    git -C "$repo_path" pull --rebase origin main >/dev/null 2>&1 || true
-    git -C "$repo_path" push -u origin main >/dev/null 2>&1 || true
+  # Ensure we have an origin remote even when the repo already existed remotely.
+  local remote_url
+  remote_url="$(gh repo view "$slug" --json sshUrl -q .sshUrl 2>/dev/null || true)"
+  if [[ -z "${remote_url:-}" ]]; then
+    return 0
   fi
+
+  if ! git -C "$repo_path" remote get-url origin >/dev/null 2>&1; then
+    git -C "$repo_path" remote add origin "$remote_url" >/dev/null 2>&1 || true
+  fi
+
+  git -C "$repo_path" pull --rebase origin main >/dev/null 2>&1 || true
+  git -C "$repo_path" push -u origin main >/dev/null 2>&1 || true
 }
 
 process_single_idea() {
@@ -354,6 +369,7 @@ process_single_idea() {
   idea_json="$(jq -c ".ideas[$idx]" "$IDEAS_FILE")"
 
   local status title summary repo_name repo_path objective notes
+  local idea_visibility
   status="$(jq -r '.status // "NEW"' <<<"$idea_json")"
   if [[ "$status" != "NEW" && "$status" != "TRIAGED" ]]; then
     return 0
@@ -365,6 +381,7 @@ process_single_idea() {
   repo_path="$(jq -r '.repo_path // ""' <<<"$idea_json")"
   objective="$(jq -r '.objective // ""' <<<"$idea_json")"
   notes="$(jq -r '.notes // ""' <<<"$idea_json")"
+  idea_visibility="$(jq -r '.visibility // ""' <<<"$idea_json")"
 
   if [[ -z "$title" ]]; then
     update_idea_entry "$idx" "BLOCKED" "$repo_name" "$repo_path" "$objective" "$notes" "Missing title"
@@ -400,7 +417,10 @@ process_single_idea() {
     git -C "$repo_path" commit -m "feat: bootstrap project from idea '$title'" >/dev/null 2>&1 || true
   fi
 
-  create_or_sync_github_repo "$repo_path" "$repo_name"
+  if [[ -z "$idea_visibility" ]]; then
+    idea_visibility="$IDEA_REPO_VISIBILITY"
+  fi
+  create_or_sync_github_repo "$repo_path" "$repo_name" "$idea_visibility"
   ensure_repo_in_repos_file "$repo_name" "$repo_path" "$objective"
   update_idea_entry "$idx" "ACTIVE" "$repo_name" "$repo_path" "$objective" "$notes" ""
 }

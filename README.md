@@ -14,6 +14,8 @@ Autonomous Codex orchestrator that runs a repeatable “plan -> implement -> ver
 - Parallel execution across repos (`PARALLEL_REPOS`).
 - Per-repo task planning with a cap (`TASKS_PER_REPO`, may do fewer).
 - Local verification when feasible (tests/lint/build/smoke checks).
+- Idea queue bootstrap (new projects auto-created from `ideas.yaml`).
+- Optional cleanup/refactor pass after a burst of commits (`CLEANUP_TRIGGER_COMMITS`).
 - CI self-healing loop (bounded retries).
 - Structured logs and status files under `logs/`.
 
@@ -55,6 +57,7 @@ See `docs/observability.md` for:
 
 - `docs/observability.md`
 - `docs/readme_policy.md`
+- `docs/ideas.md`
 - `prompts/` (agent behavior)
 - `scripts/` (discovery + loop)
 
