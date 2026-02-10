@@ -13,6 +13,20 @@
       "created_at": "1970-01-01T00:00:00Z",
       "updated_at": "1970-01-01T00:00:00Z",
       "last_error": ""
+    },
+    {
+      "id": "network-reactor",
+      "title": "Network Reactor",
+      "summary": "Internet diagnostics suite: page load lab, my IP metadata, BGP explorer, speed test.",
+      "status": "ACTIVE",
+      "repo_name": "network-reactor",
+      "repo_path": "/Users/sarvesh/code/network-reactor",
+      "objective": "Ship a clean minimal diagnostics suite (page-load, my-ip, bgp, speedtest) with strong UX, safe enrichment, and reliable local verification.",
+      "visibility": "public",
+      "notes": "Created directly (not auto-bootstrapped). See plan.md in repo for details.",
+      "created_at": "1970-01-01T00:00:00Z",
+      "updated_at": "1970-01-01T00:00:00Z",
+      "last_error": ""
     }
   ]
 }
