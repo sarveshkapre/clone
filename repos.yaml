@@ -1,9 +1,16 @@
 {
-  "generated_at": "2026-02-09T03:53:26Z",
+  "generated_at": "2026-02-10T06:06:15.734369Z",
   "code_root": "/Users/sarvesh/code",
   "activity_window_days": 60,
   "threshold_date": "2025-12-10",
   "repos": [
+    {
+      "name": "network-reactor",
+      "path": "/Users/sarvesh/code/network-reactor",
+      "branch": "main",
+      "last_commit": "2026-02-10T06:06:15.734369Z",
+      "objective": "Ship a clean minimal diagnostics suite (page-load, my-ip, bgp, speedtest) with strong UX, safe enrichment, and reliable local verification. See plan.md."
+    },
     {
       "name": "google-workspace-synth",
       "path": "/Users/sarvesh/code/google-workspace-synth",
