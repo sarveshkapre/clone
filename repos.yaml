@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-02-10T06:11:54.505759Z",
+  "generated_at": "2026-02-11T05:11:22Z",
   "code_root": "/Users/sarvesh/code",
   "activity_window_days": 60,
   "threshold_date": "2025-12-10",
@@ -23,7 +23,7 @@
       "path": "/Users/sarvesh/code/my-ip-metadata",
       "branch": "main",
       "last_commit": "2026-02-10T06:11:54.505387Z",
-      "objective": "Ship a privacy-minded \u201cmy ip\u201d metadata page with clear trust labeling. See plan.md."
+      "objective": "Ship a privacy-minded “my ip” metadata page with clear trust labeling. See plan.md."
     },
     {
       "name": "page-load-lab",
@@ -381,6 +381,41 @@
       "branch": "main",
       "last_commit": "2017-02-11T19:19:37-05:00",
       "objective": "Keep Strong-Password-and-Password-Hash-Generator production-ready. Current focus: Strong Password and Password Hash Generator. Find the highest-impact pending work, implement it, test it, and push to main."
+    },
+    {
+      "name": "fleetrun",
+      "path": "/Users/sarvesh/code/fleetrun",
+      "objective": "Keep fleetrun production-ready. Current focus: Fleetrun. Find the highest-impact pending work, implement it, test it, and push to main.",
+      "branch": "main",
+      "last_commit": "2026-02-11T05:11:22Z"
+    },
+    {
+      "name": "keyringd",
+      "path": "/Users/sarvesh/code/keyringd",
+      "objective": "Keep keyringd production-ready. Current focus: Keyringd. Find the highest-impact pending work, implement it, test it, and push to main.",
+      "branch": "main",
+      "last_commit": "2026-02-11T05:11:22Z"
+    },
+    {
+      "name": "fleetdiff",
+      "path": "/Users/sarvesh/code/fleetdiff",
+      "objective": "Keep fleetdiff production-ready. Current focus: Fleetdiff. Find the highest-impact pending work, implement it, test it, and push to main.",
+      "branch": "main",
+      "last_commit": "2026-02-11T05:11:22Z"
+    },
+    {
+      "name": "netpermit",
+      "path": "/Users/sarvesh/code/netpermit",
+      "objective": "Keep netpermit production-ready. Current focus: Netpermit. Find the highest-impact pending work, implement it, test it, and push to main.",
+      "branch": "main",
+      "last_commit": "2026-02-11T05:11:22Z"
+    },
+    {
+      "name": "auditgrep",
+      "path": "/Users/sarvesh/code/auditgrep",
+      "objective": "Keep auditgrep production-ready. Current focus: Auditgrep. Find the highest-impact pending work, implement it, test it, and push to main.",
+      "branch": "main",
+      "last_commit": "2026-02-11T05:11:22Z"
     }
   ]
 }
