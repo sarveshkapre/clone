@@ -10,6 +10,8 @@ summary=""
 repo_name=""
 objective=""
 visibility=""
+source="manual"
+tags_csv=""
 
 usage() {
   cat <<'EOF'
@@ -22,6 +24,8 @@ Options:
   --repo-name    Optional. Repo name slug to create (default: derived from title).
   --objective    Optional. Repository objective (default: generic shipping objective).
   --visibility   Optional. private|public (default: private).
+  --source       Optional. Idea source label (default: manual).
+  --tags         Optional. Comma-separated tags (example: clone-idea,clone-idea-20260212T090000Z).
 
 Environment:
   IDEAS_FILE          Path to ideas file (default: ideas.yaml)
@@ -51,6 +55,8 @@ while [[ $# -gt 0 ]]; do
     --repo-name) repo_name="${2:-}"; shift 2 ;;
     --objective) objective="${2:-}"; shift 2 ;;
     --visibility) visibility="${2:-}"; shift 2 ;;
+    --source) source="${2:-}"; shift 2 ;;
+    --tags) tags_csv="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -79,6 +85,10 @@ if [[ "$visibility" != "private" && "$visibility" != "public" ]]; then
   exit 2
 fi
 
+if [[ -z "$source" ]]; then
+  source="manual"
+fi
+
 repo_path="$CODE_ROOT/$repo_name"
 
 if [[ -z "$objective" ]]; then
@@ -87,6 +97,17 @@ fi
 
 now="$(timestamp_utc)"
 id="$(slugify "$title")-$(date -u +%Y%m%d%H%M%S)"
+tags_json='[]'
+if [[ -n "$tags_csv" ]]; then
+  tags_json="$(jq -Rn --arg csv "$tags_csv" '
+    ($csv
+      | split(",")
+      | map(gsub("^\\s+|\\s+$"; ""))
+      | map(select(length > 0))
+      | unique
+    )
+  ')"
+fi
 
 if [[ ! -f "$IDEAS_FILE" ]]; then
   cat >"$IDEAS_FILE" <<'EOF'
@@ -108,6 +129,8 @@ jq \
   --arg repo_path "$repo_path" \
   --arg objective "$objective" \
   --arg visibility "$visibility" \
+  --arg source "$source" \
+  --argjson tags "$tags_json" \
   '
   .generated_at = $now
   | .ideas = ((.ideas // []) + [{
@@ -119,6 +142,8 @@ jq \
       repo_path: $repo_path,
       objective: $objective,
       visibility: $visibility,
+      source: $source,
+      tags: $tags,
       notes: "",
       created_at: $now,
       updated_at: $now,
@@ -127,5 +152,4 @@ jq \
   ' "$IDEAS_FILE" >"$tmp"
 mv "$tmp" "$IDEAS_FILE"
 
-echo "Queued idea: $title -> $repo_name ($visibility)"
-
+echo "Queued idea: $title -> $repo_name ($visibility) id=$id"

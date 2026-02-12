@@ -32,8 +32,23 @@ Optional:
 When the loop sees a `NEW` idea, it will:
 - create a local folder under `CODE_ROOT`
 - initialize a git repo (`main`)
-- create baseline docs (`README.md`, `AGENTS.md`, `PROJECT_MEMORY.md`, `INCIDENTS.md`, `CLONE_FEATURES.md`)
+- create baseline docs (`README.md`, `AGENTS.md`, `PRODUCT_ROADMAP.md`, `PROJECT_MEMORY.md`, `INCIDENTS.md`, `CLONE_FEATURES.md`)
 - optionally run Codex to build the first real slice
-- create or sync the GitHub repo (requires `gh auth`)
-- add the repo to `repos.runtime.yaml` so it gets worked on in the same run
+- optionally create or sync a GitHub repo only when `ENABLE_GITHUB_SYNC=1`
+- add the repo to `repos.yaml` so it gets worked on in the same run
 
+## Daily Best-Idea Runner
+
+Use:
+
+```bash
+CLONE_ROOT="${CLONE_ROOT:-$HOME/code/Clone}"
+ENABLE_GITHUB_SYNC=1 "$CLONE_ROOT/scripts/run_daily_idea_cycle.sh"
+```
+
+Behavior:
+- selects one best idea per run
+- enforces a 24-hour gate via `logs/daily-idea-state.json`
+- adds tags `clone-idea` and `clone-idea-<timestamp>` to the idea entry
+- bootstraps and enrolls the new repo
+- creates and pushes git tag `clone-idea-<timestamp>` when remote sync is available

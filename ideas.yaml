@@ -1,32 +1,4 @@
 {
   "generated_at": "1970-01-01T00:00:00Z",
-  "ideas": [
-    {
-      "id": "example-idea",
-      "title": "Example: build a tiny daily writing assistant",
-      "summary": "CLI-first tool that helps draft, refine, and publish short daily notes.",
-      "status": "ACTIVE",
-      "repo_name": "daily-writing-assistant",
-      "repo_path": "/Users/sarvesh/code/daily-writing-assistant",
-      "objective": "Ship a lightweight writing assistant with solid UX, tests, and automation-ready docs.",
-      "notes": "Set status to NEW for live auto-bootstrap. Keep status ACTIVE/BLOCKED to skip.",
-      "created_at": "1970-01-01T00:00:00Z",
-      "updated_at": "1970-01-01T00:00:00Z",
-      "last_error": ""
-    },
-    {
-      "id": "network-reactor",
-      "title": "Network Reactor",
-      "summary": "Internet diagnostics suite: page load lab, my IP metadata, BGP explorer, speed test.",
-      "status": "ACTIVE",
-      "repo_name": "network-reactor",
-      "repo_path": "/Users/sarvesh/code/network-reactor",
-      "objective": "Ship a clean minimal diagnostics suite (page-load, my-ip, bgp, speedtest) with strong UX, safe enrichment, and reliable local verification.",
-      "visibility": "public",
-      "notes": "Created directly (not auto-bootstrapped). See plan.md in repo for details.",
-      "created_at": "1970-01-01T00:00:00Z",
-      "updated_at": "1970-01-01T00:00:00Z",
-      "last_error": ""
-    }
-  ]
+  "ideas": []
 }

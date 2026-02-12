@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CODE_ROOT="${1:-/Users/sarvesh/code}"
+CODE_ROOT="${1:-$HOME/code}"
 WINDOW_DAYS="${WINDOW_DAYS:-60}"
-OUTPUT_FILE="${OUTPUT_FILE:-repos.runtime.yaml}"
-IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-sarveshkapre.github.io,robopet,openapi-fuzzer,regex-explainer,write-for-humans-ais,rag-sanitizer,ssrf-sentinel,bas-orchestrator,github-project-pilot,log-redactor,ai_factory,projects-registry,prompt-injection-firewall,secret-scanner-plus,webproxy-suite,repo-scaffolder,aegis,infosec-evals,compression,frontier-evals,CritPt,evals,caisi-cyber-evals,SecEval,ssrf_scanner,shadowserver-python-api,idor-detector,BotGuardian,chatgpt-arxiv,GPT-X,product-security-playground}"
-PINNED_REPOS_CSV="${PINNED_REPOS_CSV:-EchoTrail,llm-news-feed,research-playground,MDEASM,Strong-Password-and-Password-Hash-Generator,Web-Crawler-Scraper,nyaya-ai}"
+OUTPUT_FILE="${OUTPUT_FILE:-repos.yaml}"
+IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-}"
+PINNED_REPOS_CSV="${PINNED_REPOS_CSV:-}"
 
 if [[ ! -d "$CODE_ROOT" ]]; then
   echo "Code root not found: $CODE_ROOT" >&2
@@ -56,6 +56,10 @@ is_ignored_repo() {
   local repo_name="$1"
   local token normalized
 
+  if [[ -z "$IGNORED_REPOS_CSV" ]]; then
+    return 1
+  fi
+
   IFS=',' read -r -a ignore_tokens <<<"$IGNORED_REPOS_CSV"
   for token in "${ignore_tokens[@]}"; do
     normalized="$(printf '%s' "$token" | xargs)"
@@ -70,6 +74,10 @@ is_ignored_repo() {
 is_pinned_repo() {
   local repo_name="$1"
   local token normalized
+
+  if [[ -z "$PINNED_REPOS_CSV" ]]; then
+    return 1
+  fi
 
   IFS=',' read -r -a pinned_tokens <<<"$PINNED_REPOS_CSV"
   for token in "${pinned_tokens[@]}"; do
