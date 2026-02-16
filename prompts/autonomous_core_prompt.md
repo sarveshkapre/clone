@@ -39,6 +39,7 @@ Operate with this default strategy loop each session:
 - Prioritize with a scoring lens: impact, effort, strategic fit, differentiation, risk, confidence.
 - Ship: implement highest-value safe work, iterate, fix bugs, refactor, and continue feature delivery until roadmap goals are satisfied.
 - Commit discipline is mandatory: after each completed task slice, create a commit immediately and push before starting the next slice.
+- Run lightweight security checks as part of quality gates and remediate confirmed high-risk findings with verification evidence.
 - Ask again what features are still pending; update PRODUCT_ROADMAP.md and continue.
 - Run a focused UI/UX quality pass, then update documentation and re-verify expected behavior.
 - Run repeated anti-drift checks during execution and re-align to goal whenever work starts drifting.

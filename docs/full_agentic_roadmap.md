@@ -33,6 +33,10 @@ Goal: make Clone a high-agency, continuous full-stack operator for many GitHub r
   - automatic scaffold + git init + bootstrap commit when missing
   - optional GitHub repo create/sync + push
   - auto enrollment into `repos.yaml`
+- Periodic security audit pattern:
+  - commit/cycle-triggered lightweight security scan
+  - report artifact per pass
+  - auto-remediation attempt for high/critical findings
 
 ## Target Architecture (Next)
 

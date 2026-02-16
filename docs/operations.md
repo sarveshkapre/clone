@@ -34,6 +34,7 @@ Default parallel execution is `5` repositories per cycle (`PARALLEL_REPOS=5`).
 5. Keep notes while executing.
 - Capture decisions, blockers, and task changes in `PROJECT_MEMORY.md`.
 - Record exact verification commands and outcomes.
+- Include a lightweight security sweep checkpoint and record findings/remediations when issues are found.
 - End the session with remaining backlog notes.
 - Ask repeatedly what features are pending and continue iterations until done criteria are met.
 - Run anti-drift checks and re-align immediately if work diverges from goals.

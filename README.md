@@ -22,6 +22,7 @@ Autonomous Codex orchestrator that runs a repeatable "plan -> implement -> verif
 - Idea queue bootstrap (new projects auto-created from `ideas.yaml`).
 - Optional cleanup/refactor pass after a burst of commits (`CLEANUP_TRIGGER_COMMITS`).
 - Optional CI self-healing loop (disabled by default).
+- Periodic lightweight security audit pass with optional auto-remediation for high/critical findings.
 - Structured logs and status files under `logs/`.
 - No artificial commit cap; commit count should follow missing work and implementation needs.
 - Backlog depth policy: keep a large aligned pending queue to avoid drift and idle cycles.
@@ -108,6 +109,19 @@ How dispatch works:
 Control Plane quick-add also supports chat-style text:
 - Example: `for project xyz: add onboarding checklist`
 - If repo selector is `*`, Clone auto-parses repo + task from the text.
+
+## Security Audit Pass
+
+Clone can run an efficient security pass on repo sessions and remediate high/critical issues.
+
+Runtime knobs:
+- `SECURITY_AUDIT_ENABLED=1` (default)
+- `SECURITY_AUDIT_TRIGGER_COMMITS=8` (run when commit delta since last scan reaches threshold)
+- `SECURITY_AUDIT_EVERY_N_CYCLES=3` (run periodically by cycle count)
+- `SECURITY_AUDIT_MAX_FINDINGS=120` (cap report size)
+
+Scanner script:
+- `scripts/security_scan.sh` (lightweight `rg`-based heuristics for secrets, TLS bypass, and risky execution patterns)
 
 ## Project Intent Intake
 

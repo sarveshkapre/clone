@@ -38,6 +38,10 @@ CI_WAIT_TIMEOUT_SECONDS="${CI_WAIT_TIMEOUT_SECONDS:-900}"
 CI_POLL_INTERVAL_SECONDS="${CI_POLL_INTERVAL_SECONDS:-30}"
 CI_MAX_FIX_ATTEMPTS="${CI_MAX_FIX_ATTEMPTS:-2}"
 CI_FAILURE_LOG_LINES="${CI_FAILURE_LOG_LINES:-200}"
+SECURITY_AUDIT_ENABLED="${SECURITY_AUDIT_ENABLED:-1}"
+SECURITY_AUDIT_TRIGGER_COMMITS="${SECURITY_AUDIT_TRIGGER_COMMITS:-8}"
+SECURITY_AUDIT_EVERY_N_CYCLES="${SECURITY_AUDIT_EVERY_N_CYCLES:-3}"
+SECURITY_AUDIT_MAX_FINDINGS="${SECURITY_AUDIT_MAX_FINDINGS:-120}"
 PARALLEL_REPOS="${PARALLEL_REPOS:-5}"
 BACKLOG_MIN_ITEMS="${BACKLOG_MIN_ITEMS:-20}"
 UIUX_GATE_ENABLED="${UIUX_GATE_ENABLED:-1}"
@@ -48,6 +52,7 @@ TASK_QUEUE_CLAIM_TTL_MINUTES="${TASK_QUEUE_CLAIM_TTL_MINUTES:-240}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IDEA_PROCESSOR_SCRIPT="${IDEA_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_ideas.sh}"
 INTENT_PROCESSOR_SCRIPT="${INTENT_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_intents.sh}"
+SECURITY_SCANNER_SCRIPT="${SECURITY_SCANNER_SCRIPT:-$SCRIPT_DIR/security_scan.sh}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -128,6 +133,26 @@ fi
 
 if ! [[ "$CI_FAILURE_LOG_LINES" =~ ^[1-9][0-9]*$ ]]; then
   echo "CI_FAILURE_LOG_LINES must be a positive integer, got: $CI_FAILURE_LOG_LINES" >&2
+  exit 1
+fi
+
+if ! [[ "$SECURITY_AUDIT_ENABLED" =~ ^[01]$ ]]; then
+  echo "SECURITY_AUDIT_ENABLED must be 0 or 1, got: $SECURITY_AUDIT_ENABLED" >&2
+  exit 1
+fi
+
+if ! [[ "$SECURITY_AUDIT_TRIGGER_COMMITS" =~ ^[0-9]+$ ]]; then
+  echo "SECURITY_AUDIT_TRIGGER_COMMITS must be a non-negative integer, got: $SECURITY_AUDIT_TRIGGER_COMMITS" >&2
+  exit 1
+fi
+
+if ! [[ "$SECURITY_AUDIT_EVERY_N_CYCLES" =~ ^[0-9]+$ ]]; then
+  echo "SECURITY_AUDIT_EVERY_N_CYCLES must be a non-negative integer, got: $SECURITY_AUDIT_EVERY_N_CYCLES" >&2
+  exit 1
+fi
+
+if ! [[ "$SECURITY_AUDIT_MAX_FINDINGS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SECURITY_AUDIT_MAX_FINDINGS must be a positive integer, got: $SECURITY_AUDIT_MAX_FINDINGS" >&2
   exit 1
 fi
 
@@ -364,6 +389,11 @@ log_event INFO "CI wait timeout seconds: $CI_WAIT_TIMEOUT_SECONDS"
 log_event INFO "CI poll interval seconds: $CI_POLL_INTERVAL_SECONDS"
 log_event INFO "CI max fix attempts: $CI_MAX_FIX_ATTEMPTS"
 log_event INFO "CI failure log lines: $CI_FAILURE_LOG_LINES"
+log_event INFO "Security audit enabled: $SECURITY_AUDIT_ENABLED"
+log_event INFO "Security audit trigger commits: $SECURITY_AUDIT_TRIGGER_COMMITS"
+log_event INFO "Security audit every N cycles: $SECURITY_AUDIT_EVERY_N_CYCLES"
+log_event INFO "Security audit max findings: $SECURITY_AUDIT_MAX_FINDINGS"
+log_event INFO "Security scanner script: $SECURITY_SCANNER_SCRIPT"
 log_event INFO "Parallel repos: $PARALLEL_REPOS"
 log_event INFO "Backlog minimum items: $BACKLOG_MIN_ITEMS"
 log_event INFO "UI/UX gate enabled: $UIUX_GATE_ENABLED"
@@ -1143,6 +1173,200 @@ PROMPT
   return 0
 }
 
+run_security_audit_for_pass() {
+  local repo_path="$1"
+  local repo_name="$2"
+  local branch="$3"
+  local repo_slug="$4"
+  local pass="$5"
+  local objective="$6"
+  local core_guidance="$7"
+  local steering_guidance="$8"
+  local pass_log_file="$9"
+  local cycle_id="${10}"
+  local commits_done_before="${11}"
+  local before_head="${12}"
+
+  local last_scan_commits last_scan_cycle
+  local current_new_commits current_commits_total commit_delta cycle_delta
+  local trigger_reason report_file scan_output summary_line
+  local critical high medium total
+  local fix_log_file fix_last_message_file fix_prompt current_branch
+  local verify_output verify_summary verify_critical verify_high verify_medium verify_total
+
+  if [[ "$SECURITY_AUDIT_ENABLED" != "1" ]]; then
+    return 0
+  fi
+  if [[ ! -x "$SECURITY_SCANNER_SCRIPT" ]]; then
+    log_event WARN "SECURITY_AUDIT_SKIP repo=$repo_name reason=scanner_not_executable script=$SECURITY_SCANNER_SCRIPT"
+    return 0
+  fi
+
+  if [[ -n "$before_head" ]]; then
+    current_new_commits="$(git -C "$repo_path" rev-list --count "${before_head}..HEAD" 2>/dev/null || echo 0)"
+  else
+    current_new_commits=0
+  fi
+  if ! [[ "$current_new_commits" =~ ^[0-9]+$ ]]; then
+    current_new_commits=0
+  fi
+  current_commits_total="$((commits_done_before + current_new_commits))"
+
+  IFS=$'\t' read -r last_scan_commits last_scan_cycle <<<"$(repo_security_progress_counts "$repo_path")"
+  commit_delta="$((current_commits_total - last_scan_commits))"
+  cycle_delta="$((cycle_id - last_scan_cycle))"
+  if (( commit_delta < 0 )); then
+    commit_delta=0
+  fi
+  if (( cycle_delta < 0 )); then
+    cycle_delta=0
+  fi
+
+  trigger_reason=""
+  if (( last_scan_cycle == 0 )); then
+    trigger_reason="first_scan"
+  elif (( SECURITY_AUDIT_TRIGGER_COMMITS > 0 && commit_delta >= SECURITY_AUDIT_TRIGGER_COMMITS )); then
+    trigger_reason="commit_delta"
+  elif (( SECURITY_AUDIT_EVERY_N_CYCLES > 0 && cycle_delta >= SECURITY_AUDIT_EVERY_N_CYCLES )); then
+    trigger_reason="cycle_interval"
+  fi
+
+  if [[ -z "$trigger_reason" ]]; then
+    return 0
+  fi
+
+  report_file="$LOG_DIR/${RUN_ID}-${repo_slug}-${pass}-security-audit.md"
+  scan_output="$(
+    REPO_PATH="$repo_path" \
+    REPORT_FILE="$report_file" \
+    MAX_FINDINGS="$SECURITY_AUDIT_MAX_FINDINGS" \
+    "$SECURITY_SCANNER_SCRIPT" 2>>"$RUN_LOG" || true
+  )"
+  if [[ -n "$scan_output" ]]; then
+    printf '%s\n' "$scan_output" >>"$RUN_LOG"
+  fi
+  summary_line="$(printf '%s\n' "$scan_output" | awk '/^SECURITY_SUMMARY /{line=$0} END{print line}')"
+  if [[ -z "$summary_line" ]]; then
+    summary_line="SECURITY_SUMMARY critical=0 high=0 medium=0 total=0 report=$report_file"
+  fi
+
+  critical="$(sed -n 's/.*critical=\([0-9][0-9]*\).*/\1/p' <<<"$summary_line" | head -n 1)"
+  high="$(sed -n 's/.*high=\([0-9][0-9]*\).*/\1/p' <<<"$summary_line" | head -n 1)"
+  medium="$(sed -n 's/.*medium=\([0-9][0-9]*\).*/\1/p' <<<"$summary_line" | head -n 1)"
+  total="$(sed -n 's/.*total=\([0-9][0-9]*\).*/\1/p' <<<"$summary_line" | head -n 1)"
+  [[ "$critical" =~ ^[0-9]+$ ]] || critical=0
+  [[ "$high" =~ ^[0-9]+$ ]] || high=0
+  [[ "$medium" =~ ^[0-9]+$ ]] || medium=0
+  [[ "$total" =~ ^[0-9]+$ ]] || total=0
+
+  log_event INFO "SECURITY_AUDIT repo=$repo_name pass=$pass reason=$trigger_reason critical=$critical high=$high medium=$medium total=$total report=$report_file"
+
+  if (( critical + high > 0 )); then
+    fix_log_file="$LOG_DIR/${RUN_ID}-${repo_slug}-${pass}-security-fix.log"
+    fix_last_message_file="$LOG_DIR/${RUN_ID}-${repo_slug}-${pass}-security-fix-last-message.txt"
+
+    IFS= read -r -d '' fix_prompt <<PROMPT || true
+You are remediating security findings for this repository.
+
+Core directive:
+$core_guidance
+
+Objective:
+$objective
+
+Security report:
+$(cat "$report_file")
+
+Required workflow:
+1) Fix all high and critical findings safely.
+2) Preserve intended behavior; avoid broad rewrites.
+3) Run relevant verification commands after fixes.
+4) Update PROJECT_MEMORY.md with security decisions and verification evidence.
+5) If a finding is a false positive, keep code safe and document why in PROJECT_MEMORY.md.
+6) Commit each completed security fix slice and push directly to origin/$branch.
+
+Rules:
+- Work only in this repository.
+- Avoid destructive git operations.
+- Do not suppress findings without justification and verification.
+- Keep changes minimal, auditable, and production-grade.
+
+Steering prompts:
+$steering_guidance
+PROMPT
+
+    security_fix_cmd=(codex exec --cd "$repo_path" --output-last-message "$fix_last_message_file")
+    if [[ -n "$CODEX_SANDBOX_FLAG" ]]; then
+      security_fix_cmd+=("$CODEX_SANDBOX_FLAG")
+    fi
+    if [[ -n "$MODEL" ]]; then
+      security_fix_cmd+=(--model "$MODEL")
+    fi
+    security_fix_cmd+=("$fix_prompt")
+
+    if ! "${security_fix_cmd[@]}" 2>&1 | tee -a "$RUN_LOG" "$pass_log_file" "$fix_log_file"; then
+      log_event WARN "SECURITY_FIX_FAIL repo=$repo_name pass=$pass log=$fix_log_file"
+    fi
+
+    current_branch="$(git -C "$repo_path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [[ "$current_branch" != "$branch" ]]; then
+      git -C "$repo_path" checkout "$branch" >>"$RUN_LOG" 2>&1 || true
+    fi
+
+    commit_all_changes_if_any "$repo_path" "fix(security): remediate audit findings ${pass}"
+    if git -C "$repo_path" remote get-url origin >/dev/null 2>&1; then
+      if ! push_main_with_retries "$repo_path" "$branch"; then
+        log_event WARN "SECURITY_FIX_PUSH_FAIL repo=$repo_name pass=$pass"
+      fi
+    fi
+
+    verify_output="$(
+      REPO_PATH="$repo_path" \
+      REPORT_FILE="$report_file" \
+      MAX_FINDINGS="$SECURITY_AUDIT_MAX_FINDINGS" \
+      "$SECURITY_SCANNER_SCRIPT" 2>>"$RUN_LOG" || true
+    )"
+    if [[ -n "$verify_output" ]]; then
+      printf '%s\n' "$verify_output" >>"$RUN_LOG"
+    fi
+    verify_summary="$(printf '%s\n' "$verify_output" | awk '/^SECURITY_SUMMARY /{line=$0} END{print line}')"
+    if [[ -z "$verify_summary" ]]; then
+      verify_summary="SECURITY_SUMMARY critical=0 high=0 medium=0 total=0 report=$report_file"
+    fi
+    verify_critical="$(sed -n 's/.*critical=\([0-9][0-9]*\).*/\1/p' <<<"$verify_summary" | head -n 1)"
+    verify_high="$(sed -n 's/.*high=\([0-9][0-9]*\).*/\1/p' <<<"$verify_summary" | head -n 1)"
+    verify_medium="$(sed -n 's/.*medium=\([0-9][0-9]*\).*/\1/p' <<<"$verify_summary" | head -n 1)"
+    verify_total="$(sed -n 's/.*total=\([0-9][0-9]*\).*/\1/p' <<<"$verify_summary" | head -n 1)"
+    [[ "$verify_critical" =~ ^[0-9]+$ ]] || verify_critical=0
+    [[ "$verify_high" =~ ^[0-9]+$ ]] || verify_high=0
+    [[ "$verify_medium" =~ ^[0-9]+$ ]] || verify_medium=0
+    [[ "$verify_total" =~ ^[0-9]+$ ]] || verify_total=0
+    log_event INFO "SECURITY_AUDIT_VERIFY repo=$repo_name pass=$pass critical=$verify_critical high=$verify_high medium=$verify_medium total=$verify_total report=$report_file"
+
+    if (( verify_critical + verify_high > 0 )); then
+      append_incident_entry \
+        "$repo_path" \
+        "Security findings remained after remediation" \
+        "High/critical security findings remained after automated remediation" \
+        "automated security pass could not eliminate all high/critical findings" \
+        "kept detailed report and remediation logs for follow-up" \
+        "run targeted manual security fixes and add missing tests around vulnerable paths" \
+        "report=$report_file pass=$pass"
+    fi
+  fi
+
+  if [[ -n "$before_head" ]]; then
+    current_new_commits="$(git -C "$repo_path" rev-list --count "${before_head}..HEAD" 2>/dev/null || echo 0)"
+  else
+    current_new_commits=0
+  fi
+  if ! [[ "$current_new_commits" =~ ^[0-9]+$ ]]; then
+    current_new_commits=0
+  fi
+  current_commits_total="$((commits_done_before + current_new_commits))"
+  save_repo_security_progress "$repo_path" "$current_commits_total" "$cycle_id"
+}
+
 enforce_uiux_gate_for_pass() {
   local repo_path="$1"
   local repo_name="$2"
@@ -1777,6 +2001,8 @@ Required workflow:
 10) Review GitHub issue signals and prioritize only issues authored by "$viewer_login" plus trusted GitHub bots when GitHub signals are enabled.
 11) Review recent CI signals and prioritize fixing failing checks when the fix is clear and safely shippable.
 12) Run a quick code review sweep to identify risks, dead or unused code, low-quality patterns, and maintenance debt.
+    - Include a lightweight security sweep focused on secrets exposure, unsafe auth/crypto patterns, risky command execution, and insecure transport defaults.
+    - If high-risk findings are confirmed, fix them in this session and record verification evidence.
 13) If web access is available, run a bounded market scan of best-in-market tools in this segment and capture feature/UX expectations with source links.
 14) Build a gap map against this repo: missing, weak, parity, differentiator.
 15) Prioritize implementing high-value missing parity features while the repo is not yet in good product phase.
@@ -1837,6 +2063,7 @@ Rules:
 - If no meaningful feature remains, focus the task list on reliability, cleanup, and maintainability work.
 - While not yet in good product phase, always include parity feature work from best-in-market benchmarks unless blocked by safety, scope, or compatibility constraints.
 - Continuously look for algorithmic improvements, design simplification, and performance optimizations when safe.
+- Treat security as a first-class quality gate: fix confirmed high-risk findings promptly and keep verification evidence in $PROJECT_MEMORY_FILE_NAME.
 - For UI-facing repositories, a new UIUX_CHECKLIST marker entry in $PROJECT_MEMORY_FILE_NAME is mandatory each session, and it must include same-line keys: flow=... desktop=... mobile=... a11y=...
 - End with concise output: tasks planned, tasks completed, tests run, CI status, remaining backlog ideas.
 - Queue markers must use exact prefixes: QUEUE_TASK_DONE: and QUEUE_TASK_BLOCKED:.
@@ -1968,6 +2195,20 @@ CLEANUP_PROMPT
     "$ci_context" \
     "$pass_log_file"
 
+  run_security_audit_for_pass \
+    "$path" \
+    "$name" \
+    "$branch" \
+    "$repo_slug" \
+    "$pass_label" \
+    "$objective" \
+    "$core_guidance" \
+    "$steering_guidance" \
+    "$pass_log_file" \
+    "$cycle_id" \
+    "$commits_done_before" \
+    "$before_head"
+
   if (( uiux_gate_required == 1 )); then
     if ! enforce_uiux_gate_for_pass \
       "$path" \
@@ -2038,6 +2279,13 @@ progress_file_for_repo_path() {
   echo "$REPO_PROGRESS_DIR/$key.tsv"
 }
 
+security_progress_file_for_repo_path() {
+  local repo_path="$1"
+  local key
+  key="$(printf '%s' "$repo_path" | cksum | awk '{print $1}')"
+  echo "$REPO_PROGRESS_DIR/$key-security.tsv"
+}
+
 parse_non_negative_or_zero() {
   local raw="$1"
   if [[ -z "$raw" || "$raw" == "null" ]]; then
@@ -2074,6 +2322,19 @@ repo_progress_counts() {
   printf '%s\t%s\n' "$cycles" "$commits"
 }
 
+repo_security_progress_counts() {
+  local repo_path="$1"
+  local progress_file commits_total cycle_last
+  progress_file="$(security_progress_file_for_repo_path "$repo_path")"
+  commits_total=0
+  cycle_last=0
+  if [[ -f "$progress_file" ]]; then
+    commits_total="$(awk -F'\t' 'NR==1 {print ($2 ~ /^[0-9]+$/ ? $2 : 0)}' "$progress_file" 2>/dev/null || echo 0)"
+    cycle_last="$(awk -F'\t' 'NR==1 {print ($3 ~ /^[0-9]+$/ ? $3 : 0)}' "$progress_file" 2>/dev/null || echo 0)"
+  fi
+  printf '%s\t%s\n' "$commits_total" "$cycle_last"
+}
+
 save_repo_progress() {
   local repo_path="$1"
   local repo_name="$2"
@@ -2090,6 +2351,19 @@ save_repo_progress() {
     "$max_cycles" \
     "$max_commits" \
     "$repo_name" \
+    "$repo_path" >"$progress_file"
+}
+
+save_repo_security_progress() {
+  local repo_path="$1"
+  local commits_total="$2"
+  local cycle_last="$3"
+  local progress_file
+  progress_file="$(security_progress_file_for_repo_path "$repo_path")"
+  printf '%s\t%s\t%s\t%s\n' \
+    "$(printf '%s' "$repo_path" | cksum | awk '{print $1}')" \
+    "$commits_total" \
+    "$cycle_last" \
     "$repo_path" >"$progress_file"
 }
 

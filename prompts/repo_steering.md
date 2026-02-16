@@ -19,6 +19,7 @@
 - Keep implementing high-value parity features from best-in-market products until good product phase is reached, while preserving repo fit and safety.
 - Score candidate work by impact, effort, strategic fit, differentiation, risk, and confidence; execute the highest-value safe items.
 - Commit discipline is mandatory: after each completed task slice, commit immediately and push before starting the next slice.
+- Include an efficient security review pass; patch confirmed high-risk findings and record verification evidence.
 - Apply a high-quality product/design bar: if a top-tier product team built this, what would they improve first?
 - Identify the top 5 high-impact improvements currently available and execute the best one.
 - Review open GitHub issues created by the repository owner and GitHub-managed/bot accounts; implement only when relevant and valuable.
