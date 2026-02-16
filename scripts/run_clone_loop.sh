@@ -4,7 +4,7 @@ set -euo pipefail
 if [[ -n "${REPOS_FILE:-}" ]]; then
   : # user-specified
 else
-  REPOS_FILE="repos.yaml"
+  REPOS_FILE="repos.runtime.yaml"
 fi
 MAX_HOURS="${MAX_HOURS:-0}"
 MAX_CYCLES="${MAX_CYCLES:-1}"
@@ -49,7 +49,7 @@ UIUX_GATE_ENABLED="${UIUX_GATE_ENABLED:-1}"
 STATE_DB_ENABLED="${STATE_DB_ENABLED:-1}"
 STATE_DB_QUEUE_SYNC_ENABLED="${STATE_DB_QUEUE_SYNC_ENABLED:-1}"
 STATE_DB_INTENT_SYNC_ENABLED="${STATE_DB_INTENT_SYNC_ENABLED:-1}"
-TASK_QUEUE_FILE="${TASK_QUEUE_FILE:-task_queue.json}"
+TASK_QUEUE_FILE="${TASK_QUEUE_FILE:-logs/task_queue.json}"
 TASK_QUEUE_MAX_ITEMS_PER_REPO="${TASK_QUEUE_MAX_ITEMS_PER_REPO:-5}"
 TASK_QUEUE_AUTO_CREATE="${TASK_QUEUE_AUTO_CREATE:-1}"
 TASK_QUEUE_CLAIM_TTL_MINUTES="${TASK_QUEUE_CLAIM_TTL_MINUTES:-240}"
@@ -57,6 +57,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IDEA_PROCESSOR_SCRIPT="${IDEA_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_ideas.sh}"
 INTENT_PROCESSOR_SCRIPT="${INTENT_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_intents.sh}"
 SECURITY_SCANNER_SCRIPT="${SECURITY_SCANNER_SCRIPT:-$SCRIPT_DIR/security_scan.sh}"
+DISCOVER_REPOS_SCRIPT="${DISCOVER_REPOS_SCRIPT:-$SCRIPT_DIR/discover_active_repos.sh}"
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
@@ -70,14 +71,22 @@ mkdir -p "$WORKER_STATUS_DIR"
 mkdir -p "$REPO_LOCK_DIR"
 mkdir -p "$REPO_PROGRESS_DIR"
 
-if [[ ! -f "$REPOS_FILE" ]]; then
-  echo "Missing repos file: $REPOS_FILE" >&2
-  exit 1
-fi
-
 if ! command -v jq >/dev/null 2>&1; then
   echo "jq is required" >&2
   exit 1
+fi
+
+if [[ ! -f "$REPOS_FILE" ]]; then
+  echo "Repos file not found: $REPOS_FILE" >&2
+  echo "Attempting auto-discovery under CODE_ROOT=$CODE_ROOT" >&2
+  if [[ ! -x "$DISCOVER_REPOS_SCRIPT" ]]; then
+    echo "Discovery script missing or not executable: $DISCOVER_REPOS_SCRIPT" >&2
+    exit 1
+  fi
+  OUTPUT_FILE="$REPOS_FILE" "$DISCOVER_REPOS_SCRIPT" "$CODE_ROOT" || {
+    echo "Auto-discovery failed. Set REPOS_FILE explicitly or fix CODE_ROOT." >&2
+    exit 1
+  }
 fi
 
 if ! command -v codex >/dev/null 2>&1; then

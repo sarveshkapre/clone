@@ -2,7 +2,7 @@
 set -euo pipefail
 
 INTENTS_FILE="${INTENTS_FILE:-intents.yaml}"
-REPOS_FILE="${REPOS_FILE:-repos.yaml}"
+REPOS_FILE="${REPOS_FILE:-repos.runtime.yaml}"
 CODE_ROOT="${CODE_ROOT:-$HOME/code}"
 MODEL="${MODEL:-gpt-5.3-codex}"
 MAX_INTENT_TASKS="${MAX_INTENT_TASKS:-8}"

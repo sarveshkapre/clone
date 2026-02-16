@@ -2,3 +2,7 @@ logs/
 .DS_Store
 repos.photographic.json
 repos.runtime.yaml
+repos.yaml
+task_queue.json
+__pycache__/
+*.pyc

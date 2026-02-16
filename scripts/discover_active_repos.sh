@@ -3,7 +3,7 @@ set -euo pipefail
 
 CODE_ROOT="${1:-$HOME/code}"
 WINDOW_DAYS="${WINDOW_DAYS:-60}"
-OUTPUT_FILE="${OUTPUT_FILE:-repos.yaml}"
+OUTPUT_FILE="${OUTPUT_FILE:-repos.runtime.yaml}"
 IGNORED_REPOS_CSV="${IGNORED_REPOS_CSV:-}"
 PINNED_REPOS_CSV="${PINNED_REPOS_CSV:-}"
 

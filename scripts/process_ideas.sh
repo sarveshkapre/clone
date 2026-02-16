@@ -2,7 +2,7 @@
 set -euo pipefail
 
 IDEAS_FILE="${IDEAS_FILE:-ideas.yaml}"
-REPOS_FILE="${REPOS_FILE:-repos.yaml}"
+REPOS_FILE="${REPOS_FILE:-repos.runtime.yaml}"
 CODE_ROOT="${CODE_ROOT:-$HOME/code}"
 MODEL="${MODEL:-gpt-5.3-codex}"
 MAX_IDEA_TASKS="${MAX_IDEA_TASKS:-10}"

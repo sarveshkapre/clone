@@ -10,7 +10,7 @@ Like `ideas.yaml`, this file is JSON managed with `jq`:
 
 - `NEW`: intent queued for analysis/bootstrap
 - `TRIAGED`: normalized fields + resolved target repo path
-- `ACTIVE`: repo is ready and enrolled in `repos.yaml`
+- `ACTIVE`: repo is ready and enrolled in managed repos catalog (`repos.runtime.yaml` by default)
 - `BLOCKED`: intake failed (check `last_error`)
 
 ## Add Intent
@@ -36,7 +36,7 @@ For each `NEW`/`TRIAGED` intent:
 1. Resolve repo path:
 - uses explicit `repo_path` when provided
 - otherwise checks `CODE_ROOT/<repo_name>`
-- otherwise checks existing `repos.yaml` matches
+- otherwise checks existing managed repos catalog matches
 
 2. If repo does not exist:
 - create local repo folder
@@ -52,7 +52,7 @@ For each `NEW`/`TRIAGED` intent:
 - creates repo with `gh` if needed
 - pushes local commits to `origin/main`
 
-5. Enroll/refresh repo in `repos.yaml`.
+5. Enroll/refresh repo in managed repos catalog (`repos.runtime.yaml` by default).
 
 ## Runtime Integration
 

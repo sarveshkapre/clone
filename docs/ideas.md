@@ -35,7 +35,7 @@ When the loop sees a `NEW` idea, it will:
 - create baseline docs (`README.md`, `AGENTS.md`, `PRODUCT_ROADMAP.md`, `PROJECT_MEMORY.md`, `INCIDENTS.md`, `CLONE_FEATURES.md`)
 - optionally run Codex to build the first real slice
 - optionally create or sync a GitHub repo only when `ENABLE_GITHUB_SYNC=1`
-- add the repo to `repos.yaml` so it gets worked on in the same run
+- add the repo to managed repos catalog (`repos.runtime.yaml` by default) so it gets worked on in the same run
 
 ## Daily Best-Idea Runner
 

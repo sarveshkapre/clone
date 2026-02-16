@@ -12,7 +12,7 @@ Goal: make Clone a high-agency, continuous full-stack operator for many GitHub r
 
 ## Implemented Now
 
-- Live operator task queue (`task_queue.json`) consumed by `scripts/run_clone_loop.sh`.
+- Live operator task queue (`logs/task_queue.json`) consumed by `scripts/run_clone_loop.sh`.
 - Per-repo queue claim/dispatch at pass start (`QUEUED -> CLAIMED`).
 - Prompt contract for queue outcomes with strict markers:
   - `QUEUE_TASK_DONE:<id>`
@@ -32,7 +32,7 @@ Goal: make Clone a high-agency, continuous full-stack operator for many GitHub r
   - local repo detection under `CODE_ROOT` before scaffolding
   - automatic scaffold + git init + bootstrap commit when missing
   - optional GitHub repo create/sync + push
-  - auto enrollment into `repos.yaml`
+  - auto enrollment into managed repos catalog (`repos.runtime.yaml` by default)
 - Periodic security audit pattern:
   - commit/cycle-triggered lightweight security scan
   - report artifact per pass

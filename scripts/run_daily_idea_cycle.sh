@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLONE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 IDEAS_FILE="${IDEAS_FILE:-$CLONE_ROOT/ideas.yaml}"
-REPOS_FILE="${REPOS_FILE:-$CLONE_ROOT/repos.yaml}"
+REPOS_FILE="${REPOS_FILE:-$CLONE_ROOT/repos.runtime.yaml}"
 CODE_ROOT="${CODE_ROOT:-$HOME/code}"
 MODEL="${MODEL:-gpt-5.3-codex}"
 CODEX_SANDBOX_FLAG="${CODEX_SANDBOX_FLAG:-}"

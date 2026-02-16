@@ -5,7 +5,7 @@ These commands are intentionally generic. Set `CLONE_ROOT` and `WORK_ROOT` once,
 ```bash
 CLONE_ROOT="${CLONE_ROOT:-$HOME/code/Clone}"
 WORK_ROOT="${WORK_ROOT:-$HOME/code}"
-REPOS_FILE="${REPOS_FILE:-$CLONE_ROOT/repos.yaml}"
+REPOS_FILE="${REPOS_FILE:-$CLONE_ROOT/repos.runtime.yaml}"
 ```
 
 ## Tail Logs

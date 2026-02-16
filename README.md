@@ -4,7 +4,7 @@ Autonomous Codex orchestrator that runs a repeatable "plan -> implement -> verif
 
 ## What It Does (High Level)
 
-- Builds a queue of active repositories (`repos.yaml` by default).
+- Builds a queue of active repositories (managed catalog is optional; local discovery fallback supported).
 - Iterates repos in parallel (defaults to `5` repos at a time).
 - Pushes directly to `main` (no PRs).
 - Runs no-auth by default; GitHub-dependent automation is opt-in.
@@ -18,7 +18,7 @@ Autonomous Codex orchestrator that runs a repeatable "plan -> implement -> verif
 - Mandatory brainstorming and goal-alignment checkpoint before implementation.
 - Local verification when feasible (tests/lint/build/smoke checks).
 - Dedicated UI/UX playbook integrated into repo prompts (`prompts/uiux_principles.md`).
-- Live operator task queue intake (`task_queue.json`) with per-repo dispatch each pass.
+- Live operator task queue intake (`logs/task_queue.json` by default) with per-repo dispatch each pass.
 - Idea queue bootstrap (new projects auto-created from `ideas.yaml`).
 - Optional cleanup/refactor pass after a burst of commits (`CLEANUP_TRIGGER_COMMITS`).
 - Optional CI self-healing loop (disabled by default).
@@ -38,7 +38,7 @@ WORK_ROOT="${WORK_ROOT:-$HOME/code}"
 cd "$CLONE_ROOT"
 git pull --rebase
 
-# 1) Discover active repos (writes repos.yaml by default)
+# 1) Discover active repos (writes repos.runtime.yaml by default)
 "$CLONE_ROOT/scripts/discover_active_repos.sh" "$WORK_ROOT"
 
 # 2) Run full passes (5 repos in parallel)
@@ -157,7 +157,7 @@ Use intents when you have a project idea and want Clone to:
 - scaffold a repo if it does not exist
 - initialize git and commit bootstrap changes
 - optionally create/sync GitHub repo and push commits
-- auto-enroll repo into `repos.yaml`
+- auto-enroll repo into managed repos catalog (`repos.runtime.yaml` by default)
 
 If your repos are under `/code`, run with `CODE_ROOT=/code`.
 
@@ -226,7 +226,7 @@ npm run clone:start
 npm run clone:status
 ```
 
-`repos.yaml` is optional for the Control Plane launcher.
+Managed repo catalog files are optional for the Control Plane launcher.
 If no managed repos file exists, Clone auto-discovers local git repos from `Code Root`.
 
 Stop / restart:
@@ -312,7 +312,7 @@ Minimal flow:
 - triage and bootstrap local project files in `$WORK_ROOT/<repo_name>`
 - initialize git + commit
 - optionally sync GitHub repo only when `ENABLE_GITHUB_SYNC=1`
-- append/update that project in `repos.yaml`
+- append/update that project in managed repos catalog (`repos.runtime.yaml` by default)
 - mark idea status to `ACTIVE` when successful (or `BLOCKED` on failure)
 
 Status meanings:

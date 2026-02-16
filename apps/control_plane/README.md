@@ -44,9 +44,9 @@ python3 apps/control_plane/server.py --host 127.0.0.1 --port 8787
 
 Defaults:
 - `--clone-root` auto-detects this repository root.
-- `--repos-file` auto-selects `repos.runtime.yaml` if present, else `repos.yaml` (optional).
+- `--repos-file` defaults to `repos.runtime.yaml` (optional).
 - `--logs-dir` defaults to `logs`.
-- `--task-queue-file` defaults to `task_queue.json`.
+- `--task-queue-file` defaults to `logs/task_queue.json`.
 
 ## What It Shows
 
@@ -109,7 +109,7 @@ Runtime files under `logs/`:
 
 ## Notes
 
-- This app reads local files under `logs/` and optional repo metadata from `repos.yaml` / `repos.runtime.yaml`.
+- This app reads local files under `logs/` and optional repo metadata from `repos.runtime.yaml` (or custom `REPOS_FILE`).
 - If managed repo metadata is missing, the app falls back to local filesystem repo discovery under `Code Root`.
 - Commit stream uses local `git log` calls per discovered repositories.
 - GitHub import in Run Launcher uses local `gh` CLI (`gh auth login` required) and works with any writable code-root path.

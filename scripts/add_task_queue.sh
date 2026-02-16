@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-TASK_QUEUE_FILE="${TASK_QUEUE_FILE:-task_queue.json}"
+TASK_QUEUE_FILE="${TASK_QUEUE_FILE:-logs/task_queue.json}"
 
 repo="*"
 repo_path=""

@@ -3836,7 +3836,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--repos-file",
         default=os.environ.get("REPOS_FILE", ""),
-        help="Repos file path (absolute or relative to clone root)",
+        help="Optional repos metadata file path (absolute or relative to clone root)",
     )
     parser.add_argument(
         "--logs-dir",
@@ -3845,7 +3845,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--task-queue-file",
-        default=os.environ.get("TASK_QUEUE_FILE", "task_queue.json"),
+        default=os.environ.get("TASK_QUEUE_FILE", "logs/task_queue.json"),
         help="Task queue file path (absolute or relative to clone root)",
     )
     return parser
@@ -3859,8 +3859,7 @@ def main() -> int:
     if args.repos_file:
         repos_file = Path(args.repos_file)
     else:
-        runtime_repos = clone_root / "repos.runtime.yaml"
-        repos_file = runtime_repos if runtime_repos.exists() else (clone_root / "repos.yaml")
+        repos_file = clone_root / "repos.runtime.yaml"
     logs_dir = Path(args.logs_dir)
     task_queue_file = Path(args.task_queue_file)
 

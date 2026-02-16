@@ -29,11 +29,7 @@ if [[ -n "$REPOS_FILE_INPUT" ]]; then
     RESOLVED_REPOS_FILE="$CLONE_ROOT/$REPOS_FILE_INPUT"
   fi
 else
-  if [[ -f "$CLONE_ROOT/repos.runtime.yaml" ]]; then
-    RESOLVED_REPOS_FILE="$CLONE_ROOT/repos.runtime.yaml"
-  else
-    RESOLVED_REPOS_FILE="$CLONE_ROOT/repos.yaml"
-  fi
+  RESOLVED_REPOS_FILE="$CLONE_ROOT/repos.runtime.yaml"
 fi
 
 usage() {
@@ -57,7 +53,7 @@ Environment overrides:
   CLONE_LOGS_DIR              (default: logs)
   CLONE_CONTROL_PLANE_LOG     (default: logs/control-plane-ui.log)
   CLONE_CONTROL_PLANE_PID_FILE(default: logs/control-plane-ui-<port>.pid)
-  REPOS_FILE                  (optional; default: repos.runtime.yaml else repos.yaml)
+  REPOS_FILE                  (optional; default: repos.runtime.yaml)
   PYTHON_BIN                  (default: python3)
   STOP_TIMEOUT_SECONDS        (default: 10)
   TAIL_LINES                  (default: 200)
