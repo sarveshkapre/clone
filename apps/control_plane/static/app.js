@@ -5604,7 +5604,21 @@ async function bootstrap() {
     await loadNotificationConfig();
     await loadNotificationEvents(true);
     await loadTaskQueue(true);
-    await loadReposCatalog(true);
+    try {
+      await loadReposCatalog(true);
+    } catch (error) {
+      console.warn("managed repo catalog unavailable", error);
+      state.managedRepoCatalog = [];
+      state.managedRepoCatalogUpdatedAt = Date.now();
+    }
+    try {
+      await loadLocalRepos(true);
+    } catch (error) {
+      console.warn("local repo scan unavailable", error);
+      state.localRepoCatalog = [];
+      state.localRepoCatalogUpdatedAt = Date.now();
+    }
+    rebuildStartRunCatalogFromSources();
     if (state.route === "launch" && !state.startRunModalOpen) {
       await openStartRunModal("start");
     }

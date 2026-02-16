@@ -44,7 +44,7 @@ python3 apps/control_plane/server.py --host 127.0.0.1 --port 8787
 
 Defaults:
 - `--clone-root` auto-detects this repository root.
-- `--repos-file` auto-selects `repos.runtime.yaml` if present, else `repos.yaml`.
+- `--repos-file` auto-selects `repos.runtime.yaml` if present, else `repos.yaml` (optional).
 - `--logs-dir` defaults to `logs`.
 - `--task-queue-file` defaults to `task_queue.json`.
 
@@ -72,7 +72,7 @@ Defaults:
 - Critical alert when duplicate `run_clone_loop.sh` process groups are detected
 - Live toast notifications for new warn/critical alerts
 - Run controls (start/stop/restart) for `scripts/run_clone_loop.sh`
-- Run Launcher GitHub import flow (detect `gh` auth, fetch owner repos, select/import into chosen code root, auto-upsert `repos.yaml`)
+- Run Launcher GitHub import flow (detect `gh` auth, fetch owner repos, select/import into chosen code root, auto-upsert managed catalog when enabled)
 - Run Launcher local scan flow (scan selected `Code Root` for git repos and include them in launch selection)
 - `Normalize Loops` control to collapse duplicate loop process groups safely
 - Live commit stream (last N hours)
@@ -108,8 +108,9 @@ Runtime files under `logs/`:
 
 ## Notes
 
-- This app reads local files under `logs/` and repo metadata from `repos.yaml`.
-- Commit stream uses local `git log` calls per repo listed in `repos.yaml`.
+- This app reads local files under `logs/` and optional repo metadata from `repos.yaml` / `repos.runtime.yaml`.
+- If managed repo metadata is missing, the app falls back to local filesystem repo discovery under `Code Root`.
+- Commit stream uses local `git log` calls per discovered repositories.
 - GitHub import in Run Launcher uses local `gh` CLI (`gh auth login` required) and works with any writable code-root path.
 - Local discovery in Run Launcher scans filesystem git repositories under `Code Root`; repository lists are dynamic (no hardcoded repo names).
 - No authentication is required for local use.

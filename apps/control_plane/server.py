@@ -224,6 +224,136 @@ def parse_repos_from_yaml_like(content: str) -> list[dict[str, Any]]:
     return repos
 
 
+def read_repos_payload(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {"repos": []}
+    content = path.read_text(encoding="utf-8", errors="replace")
+    parsed: dict[str, Any] = {}
+    try:
+        decoded = json.loads(content)
+        if isinstance(decoded, dict):
+            parsed = decoded
+    except json.JSONDecodeError:
+        parsed = {"repos": parse_repos_from_yaml_like(content)}
+    repos = [item for item in parsed.get("repos", []) if isinstance(item, dict)]
+    parsed["repos"] = repos
+    return parsed
+
+
+def resolve_default_code_root(clone_root: Path, repos_file: Path) -> Path:
+    payload = read_repos_payload(repos_file)
+    payload_root = str(payload.get("code_root") or "").strip()
+    if payload_root:
+        return Path(payload_root).expanduser().resolve()
+    env_path = str(os.environ.get("CODE_ROOT") or os.environ.get("CLONE_CODE_ROOT") or "").strip()
+    if env_path:
+        return Path(env_path).expanduser().resolve()
+    clone_parent = clone_root.parent
+    if clone_parent != clone_root and clone_parent.exists():
+        return clone_parent.resolve()
+    return (Path.home() / "code").resolve()
+
+
+def git_default_branch(repo_path: Path, fallback: str = "main") -> str:
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_path), "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        proc = None
+    if proc and proc.returncode == 0 and proc.stdout.strip():
+        out = proc.stdout.strip()
+        branch = out.split("/", 1)[1] if out.startswith("origin/") else out
+        branch = branch.strip()
+        if branch:
+            return branch
+
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=20,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        proc = None
+    if proc and proc.returncode == 0:
+        out = proc.stdout.strip()
+        if out and out != "HEAD":
+            return out
+    return fallback
+
+
+def discover_local_git_repos(
+    code_root: Path,
+    max_depth: int = 8,
+    limit: int = 10000,
+    catalog_paths: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    ignored_dirs = {
+        ".git",
+        ".hg",
+        ".svn",
+        "node_modules",
+        ".next",
+        ".cache",
+        "__pycache__",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".venv",
+        "venv",
+        "dist",
+        "build",
+        "target",
+        ".idea",
+        ".vscode",
+    }
+    root_depth = len(code_root.parts)
+    discovered: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for raw_root, dirs, _files in os.walk(code_root, topdown=True):
+        root_path = Path(raw_root)
+        depth = len(root_path.parts) - root_depth
+
+        if depth > max_depth:
+            dirs[:] = []
+            continue
+
+        has_git_dir = ".git" in dirs or root_path.joinpath(".git").is_dir()
+        dirs[:] = [name for name in dirs if name not in ignored_dirs and not name.startswith(".")]
+
+        if not has_git_dir:
+            continue
+
+        repo_path = str(root_path.resolve())
+        if repo_path in seen:
+            dirs[:] = []
+            continue
+        seen.add(repo_path)
+        discovered.append(
+            {
+                "name": root_path.name or repo_path,
+                "path": repo_path,
+                "branch": git_default_branch(root_path, fallback="main"),
+                "objective": "",
+                "in_catalog": repo_path in (catalog_paths or set()),
+                "source": "local_scan",
+            }
+        )
+        dirs[:] = []
+        if len(discovered) >= limit:
+            break
+
+    discovered.sort(key=lambda item: str(item.get("name") or "").lower())
+    return discovered
+
+
 @dataclass
 class RunSummary:
     run_id: str
@@ -484,22 +614,21 @@ class CloneMonitor:
         return runs[0] if runs else None
 
     def _load_repos(self) -> list[dict[str, Any]]:
-        mtime_ns = self.repos_file.stat().st_mtime_ns if self.repos_file.exists() else -1
+        if self.repos_file.exists():
+            mtime_ns = self.repos_file.stat().st_mtime_ns
+        else:
+            # No repos file: refresh fallback scan periodically.
+            mtime_ns = -1 - int(time.time() // 60)
         with self._cache_lock:
             if self._repos_cache and self._repos_cache[0] == mtime_ns:
                 return self._repos_cache[1]
 
-        repos: list[dict[str, Any]] = []
-        if self.repos_file.exists():
-            content = self.repos_file.read_text(encoding="utf-8", errors="replace")
-            try:
-                parsed = json.loads(content)
-                if isinstance(parsed, dict):
-                    raw_repos = parsed.get("repos", [])
-                    if isinstance(raw_repos, list):
-                        repos = [entry for entry in raw_repos if isinstance(entry, dict)]
-            except json.JSONDecodeError:
-                repos = parse_repos_from_yaml_like(content)
+        payload = read_repos_payload(self.repos_file)
+        repos = [entry for entry in payload.get("repos", []) if isinstance(entry, dict)]
+        if not repos:
+            code_root = resolve_default_code_root(self.clone_root, self.repos_file)
+            if code_root.exists() and code_root.is_dir():
+                repos = discover_local_git_repos(code_root=code_root, max_depth=8, limit=10000, catalog_paths=None)
 
         with self._cache_lock:
             self._repos_cache = (mtime_ns, repos)
@@ -1768,17 +1897,7 @@ class RunController:
         return resolved, None
 
     def _default_code_root(self) -> Path:
-        payload = self._read_repos_payload()
-        from_payload = str(payload.get("code_root") or "").strip()
-        if from_payload:
-            return Path(from_payload).expanduser().resolve()
-        env_path = str(os.environ.get("CODE_ROOT") or os.environ.get("CLONE_CODE_ROOT") or "").strip()
-        if env_path:
-            return Path(env_path).expanduser().resolve()
-        clone_parent = self.clone_root.parent
-        if clone_parent != self.clone_root and clone_parent.exists():
-            return clone_parent.resolve()
-        return (Path.home() / "code").resolve()
+        return resolve_default_code_root(self.clone_root, self.monitor.repos_file)
 
     def _resolve_code_root(self, raw_value: Any) -> Path:
         value = str(raw_value or "").strip()
@@ -1811,22 +1930,7 @@ class RunController:
             return 127, "", "", str(exc)
 
     def _git_default_branch(self, repo_path: Path, fallback: str = "main") -> str:
-        rc, out, _, _ = self._run_command(
-            ["git", "-C", str(repo_path), "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
-            timeout=20,
-        )
-        if rc == 0 and out:
-            branch = out.split("/", 1)[1] if out.startswith("origin/") else out
-            branch = branch.strip()
-            if branch:
-                return branch
-        rc, out, _, _ = self._run_command(
-            ["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"],
-            timeout=20,
-        )
-        if rc == 0 and out and out != "HEAD":
-            return out.strip()
-        return fallback
+        return git_default_branch(repo_path, fallback=fallback)
 
     def _normalize_repo_identifier(self, raw_value: str, fallback_owner: str = "") -> tuple[str, str] | None:
         value = str(raw_value or "").strip()
@@ -1855,19 +1959,7 @@ class RunController:
         return f"{owner}/{repo}", repo
 
     def _read_repos_payload(self) -> dict[str, Any]:
-        if not self.monitor.repos_file.exists():
-            return {"repos": []}
-        content = self.monitor.repos_file.read_text(encoding="utf-8", errors="replace")
-        parsed: dict[str, Any] = {}
-        try:
-            decoded = json.loads(content)
-            if isinstance(decoded, dict):
-                parsed = decoded
-        except json.JSONDecodeError:
-            parsed = {"repos": parse_repos_from_yaml_like(content)}
-        repos = [item for item in parsed.get("repos", []) if isinstance(item, dict)]
-        parsed["repos"] = repos
-        return parsed
+        return read_repos_payload(self.monitor.repos_file)
 
     def _write_repos_payload(self, payload: dict[str, Any]) -> None:
         self.monitor.repos_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1967,70 +2059,14 @@ class RunController:
                 "repos": [],
             }
 
-        ignored_dirs = {
-            ".git",
-            ".hg",
-            ".svn",
-            "node_modules",
-            ".next",
-            ".cache",
-            "__pycache__",
-            ".mypy_cache",
-            ".pytest_cache",
-            ".venv",
-            "venv",
-            "dist",
-            "build",
-            "target",
-            ".idea",
-            ".vscode",
-        }
-        catalog_paths = {str(item.get("path") or "") for item in self.monitor.repos_catalog()}
-        root_depth = len(code_root.parts)
-        repos: list[dict[str, Any]] = []
-        seen: set[str] = set()
-
-        for raw_root, dirs, _files in os.walk(code_root, topdown=True):
-            root_path = Path(raw_root)
-            depth = len(root_path.parts) - root_depth
-
-            if depth > max_depth:
-                dirs[:] = []
-                continue
-
-            pruned_dirs: list[str] = []
-            for name in dirs:
-                if name in ignored_dirs:
-                    continue
-                if name.startswith("."):
-                    continue
-                pruned_dirs.append(name)
-            has_git_dir = ".git" in dirs or root_path.joinpath(".git").is_dir()
-            dirs[:] = pruned_dirs
-
-            if not has_git_dir:
-                continue
-
-            repo_path = str(root_path.resolve())
-            if repo_path in seen:
-                dirs[:] = []
-                continue
-            seen.add(repo_path)
-            repos.append(
-                {
-                    "name": root_path.name or repo_path,
-                    "path": repo_path,
-                    "branch": self._git_default_branch(Path(repo_path), fallback="main"),
-                    "objective": "",
-                    "in_catalog": repo_path in catalog_paths,
-                    "source": "local_scan",
-                }
-            )
-            dirs[:] = []
-            if len(repos) >= limit:
-                break
-
-        repos.sort(key=lambda item: str(item.get("name") or "").lower())
+        catalog_payload = self._read_repos_payload()
+        catalog_paths = {str(item.get("path") or "").strip() for item in catalog_payload.get("repos", []) if isinstance(item, dict)}
+        repos = discover_local_git_repos(
+            code_root=code_root,
+            max_depth=max_depth,
+            limit=limit,
+            catalog_paths=catalog_paths,
+        )
         return {
             "ok": True,
             "code_root": str(code_root),

@@ -226,6 +226,9 @@ npm run clone:start
 npm run clone:status
 ```
 
+`repos.yaml` is optional for the Control Plane launcher.
+If no managed repos file exists, Clone auto-discovers local git repos from `Code Root`.
+
 Stop / restart:
 
 ```bash
@@ -276,6 +279,7 @@ Highlights:
 - `docs/product_roadmap_template.md`
 - `docs/full_agentic_roadmap.md`
 - `docs/uiux_playbook.md`
+- `UIUX.md`
 - `prompts/` (agent behavior)
 - `scripts/` (discovery + loop)
 

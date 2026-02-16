@@ -57,7 +57,7 @@ Environment overrides:
   CLONE_LOGS_DIR              (default: logs)
   CLONE_CONTROL_PLANE_LOG     (default: logs/control-plane-ui.log)
   CLONE_CONTROL_PLANE_PID_FILE(default: logs/control-plane-ui-<port>.pid)
-  REPOS_FILE                  (default: repos.runtime.yaml else repos.yaml)
+  REPOS_FILE                  (optional; default: repos.runtime.yaml else repos.yaml)
   PYTHON_BIN                  (default: python3)
   STOP_TIMEOUT_SECONDS        (default: 10)
   TAIL_LINES                  (default: 200)
@@ -184,11 +184,6 @@ precheck() {
     ok=1
   }
 
-  if [[ ! -f "$RESOLVED_REPOS_FILE" ]]; then
-    echo "Missing repos file: $RESOLVED_REPOS_FILE" >&2
-    ok=1
-  fi
-
   if (( ok != 0 )); then
     return 1
   fi
@@ -196,7 +191,11 @@ precheck() {
   echo "Precheck OK"
   echo "clone_root=$CLONE_ROOT"
   echo "server_script=$SERVER_SCRIPT"
-  echo "repos_file=$RESOLVED_REPOS_FILE"
+  if [[ -f "$RESOLVED_REPOS_FILE" ]]; then
+    echo "repos_file=$RESOLVED_REPOS_FILE"
+  else
+    echo "repos_file=$RESOLVED_REPOS_FILE (optional; using local-scan fallback)"
+  fi
   echo "logs_dir=$LOGS_DIR"
   echo "bind=http://$HOST:$PORT"
 }
