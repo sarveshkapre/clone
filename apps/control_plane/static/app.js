@@ -86,6 +86,14 @@ const elements = {
   startRunSelectAllBtn: document.getElementById("startRunSelectAllBtn"),
   startRunSelectNoneBtn: document.getElementById("startRunSelectNoneBtn"),
   startRunRepoTable: document.getElementById("startRunRepoTable"),
+  startRunCodeRoot: document.getElementById("startRunCodeRoot"),
+  startRunGithubRefreshBtn: document.getElementById("startRunGithubRefreshBtn"),
+  startRunGithubImportBtn: document.getElementById("startRunGithubImportBtn"),
+  startRunGithubMeta: document.getElementById("startRunGithubMeta"),
+  startRunGithubSearch: document.getElementById("startRunGithubSearch"),
+  startRunGithubSelectAllBtn: document.getElementById("startRunGithubSelectAllBtn"),
+  startRunGithubSelectNoneBtn: document.getElementById("startRunGithubSelectNoneBtn"),
+  startRunGithubRepoTable: document.getElementById("startRunGithubRepoTable"),
   notifyStatusMeta: document.getElementById("notifyStatusMeta"),
   notifyEnabled: document.getElementById("notifyEnabled"),
   notifyWebhookUrl: document.getElementById("notifyWebhookUrl"),
@@ -169,6 +177,7 @@ const REPO_INSIGHTS_REFRESH_MS = 45000;
 const NOTIFY_EVENTS_REFRESH_MS = 30000;
 const TASK_QUEUE_REFRESH_MS = 12000;
 const REPOS_CATALOG_REFRESH_MS = 120000;
+const GITHUB_REPOS_REFRESH_MS = 180000;
 const RUN_LOG_REFRESH_MS = 8000;
 const ACTIVE_RUN_LOG_REFRESH_MS = 5000;
 const RUN_LOG_LINE_LIMIT = 500;
@@ -333,6 +342,13 @@ const state = {
   startRunMode: "auto",
   startRunSearch: "",
   startRunSelection: {},
+  githubStatus: null,
+  githubStatusUpdatedAt: 0,
+  githubRepoCatalog: [],
+  githubRepoCatalogUpdatedAt: 0,
+  githubSearch: "",
+  githubSelection: {},
+  githubBusy: false,
   startRunBusy: false,
   route: "overview",
   lastNonLaunchRoute: "overview",
@@ -4155,6 +4171,330 @@ function normalizeRepoCatalog(records) {
   return normalized;
 }
 
+function githubRepoKey(repo) {
+  return String(repo?.name_with_owner || repo?.name || "");
+}
+
+function normalizeGithubRepoCatalog(records) {
+  const normalized = [];
+  (records || []).forEach((item) => {
+    if (!item || typeof item !== "object") return;
+    const nameWithOwner = String(item.name_with_owner || item.nameWithOwner || "").trim();
+    const name = String(item.name || "").trim() || nameWithOwner.split("/").pop() || "";
+    if (!nameWithOwner || !name) return;
+    normalized.push({
+      name,
+      name_with_owner: nameWithOwner,
+      owner: String(item.owner || "").trim(),
+      description: String(item.description || "").trim(),
+      is_private: Boolean(item.is_private),
+      is_fork: Boolean(item.is_fork),
+      updated_at: String(item.updated_at || "").trim(),
+      default_branch: String(item.default_branch || "main").trim() || "main",
+      url: String(item.url || "").trim(),
+      path_candidate: String(item.path_candidate || "").trim(),
+      local_exists: Boolean(item.local_exists),
+      in_catalog: Boolean(item.in_catalog),
+      imported: Boolean(item.imported),
+    });
+  });
+  normalized.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+  return normalized;
+}
+
+function ensureGithubSelectionInitialized(force = false) {
+  const previous = state.githubSelection || {};
+  const next = {};
+  (state.githubRepoCatalog || []).forEach((repo) => {
+    const key = githubRepoKey(repo);
+    if (!key) return;
+    if (!force && previous[key]) {
+      next[key] = { enabled: Boolean(previous[key].enabled) };
+      return;
+    }
+    next[key] = { enabled: !Boolean(repo.in_catalog) };
+  });
+  state.githubSelection = next;
+}
+
+function filteredGithubRepoCatalog() {
+  const query = String(state.githubSearch || "").trim().toLowerCase();
+  if (!query) return state.githubRepoCatalog || [];
+  return (state.githubRepoCatalog || []).filter((repo) => {
+    const haystack = `${repo.name_with_owner || ""} ${repo.description || ""}`.toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function selectedGithubReposFromModal() {
+  return (state.githubRepoCatalog || [])
+    .filter((repo) => {
+      const key = githubRepoKey(repo);
+      return Boolean(state.githubSelection[key]?.enabled);
+    })
+    .map((repo) => ({
+      name_with_owner: repo.name_with_owner,
+      name: repo.name,
+      default_branch: repo.default_branch || "main",
+    }));
+}
+
+function setStartRunGithubBusy(busy) {
+  state.githubBusy = Boolean(busy);
+  const disabled = state.githubBusy || state.startRunBusy;
+  elements.startRunGithubRefreshBtn.disabled = disabled;
+  elements.startRunGithubImportBtn.disabled = disabled;
+  elements.startRunGithubSelectAllBtn.disabled = disabled;
+  elements.startRunGithubSelectNoneBtn.disabled = disabled;
+}
+
+function renderStartRunGithubRepoTable() {
+  clearNode(elements.startRunGithubRepoTable);
+  const status = state.githubStatus || {};
+  const rows = filteredGithubRepoCatalog();
+  const total = (state.githubRepoCatalog || []).length;
+  const selected = selectedGithubReposFromModal().length;
+
+  if (!status.gh_available) {
+    elements.startRunGithubMeta.textContent = "GitHub CLI not installed; local catalog still works.";
+  } else if (!status.authenticated) {
+    elements.startRunGithubMeta.textContent = "Run `gh auth login` to fetch your GitHub repositories.";
+  } else {
+    const owner = String(status.login || "unknown");
+    elements.startRunGithubMeta.textContent = `${selected}/${total} selected • owner ${owner}`;
+  }
+
+  if (state.githubBusy) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    cell.textContent = "Loading GitHub repositories...";
+    row.appendChild(cell);
+    elements.startRunGithubRepoTable.appendChild(row);
+    return;
+  }
+
+  if (!status.gh_available) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    cell.textContent = "Install `gh` to fetch repositories directly from GitHub.";
+    row.appendChild(cell);
+    elements.startRunGithubRepoTable.appendChild(row);
+    return;
+  }
+
+  if (!status.authenticated) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    cell.textContent = "GitHub not authenticated. Run `gh auth login` in your terminal.";
+    row.appendChild(cell);
+    elements.startRunGithubRepoTable.appendChild(row);
+    return;
+  }
+
+  if (!rows.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    cell.textContent = total ? "No GitHub repos match your search." : "No GitHub repos loaded yet.";
+    row.appendChild(cell);
+    elements.startRunGithubRepoTable.appendChild(row);
+    return;
+  }
+
+  rows.forEach((repo) => {
+    const key = githubRepoKey(repo);
+    const selection = state.githubSelection[key] || { enabled: false };
+    const row = document.createElement("tr");
+    row.classList.toggle("selected", Boolean(selection.enabled));
+
+    const setSelection = (enabled) => {
+      state.githubSelection[key] = { enabled: Boolean(enabled) };
+      row.classList.toggle("selected", Boolean(enabled));
+      renderStartRunGithubRepoTable();
+    };
+
+    const useCell = document.createElement("td");
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = Boolean(selection.enabled);
+    checkbox.addEventListener("change", () => {
+      setSelection(Boolean(checkbox.checked));
+    });
+    useCell.appendChild(checkbox);
+
+    const repoCell = document.createElement("td");
+    repoCell.className = "mono";
+    repoCell.textContent = repo.name_with_owner;
+    repoCell.title = repo.description || repo.path_candidate || "";
+
+    const visibilityCell = document.createElement("td");
+    visibilityCell.textContent = repo.is_private ? "private" : "public";
+
+    const statusCell = document.createElement("td");
+    if (repo.in_catalog) {
+      statusCell.textContent = "managed";
+    } else if (repo.local_exists) {
+      statusCell.textContent = "local only";
+    } else {
+      statusCell.textContent = "remote";
+    }
+
+    const updatedCell = document.createElement("td");
+    updatedCell.textContent = formatUtc(repo.updated_at || "");
+
+    row.addEventListener("click", (event) => {
+      if (event.target instanceof HTMLInputElement) return;
+      event.preventDefault();
+      setSelection(!Boolean(state.githubSelection[key]?.enabled));
+    });
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.addEventListener("keydown", (event) => {
+      const keyName = String(event.key || "");
+      if (keyName === "Enter" || keyName === " ") {
+        event.preventDefault();
+        setSelection(!Boolean(state.githubSelection[key]?.enabled));
+      }
+    });
+    row.append(useCell, repoCell, visibilityCell, statusCell, updatedCell);
+    elements.startRunGithubRepoTable.appendChild(row);
+  });
+}
+
+async function loadGithubStatus(force = false) {
+  if (!force && state.githubStatus && Date.now() - state.githubStatusUpdatedAt < 30000) {
+    return state.githubStatus;
+  }
+  const query = new URLSearchParams();
+  const codeRoot = String(elements.startRunCodeRoot.value || "").trim();
+  if (codeRoot) query.set("code_root", codeRoot);
+  const response = await fetch(`/api/github/status?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error(`github status failed with status ${response.status}`);
+  }
+  const payload = await response.json();
+  const github = payload.github || {};
+  state.githubStatus = github;
+  state.githubStatusUpdatedAt = Date.now();
+  if (github.code_root) {
+    elements.startRunCodeRoot.value = String(github.code_root);
+  }
+  return github;
+}
+
+async function loadGithubRepos(force = false) {
+  if (!force && Date.now() - state.githubRepoCatalogUpdatedAt < GITHUB_REPOS_REFRESH_MS && state.githubRepoCatalog.length) {
+    return state.githubRepoCatalog;
+  }
+  const status = await loadGithubStatus(force);
+  if (!status.gh_available || !status.authenticated) {
+    state.githubRepoCatalog = [];
+    state.githubRepoCatalogUpdatedAt = Date.now();
+    ensureGithubSelectionInitialized(true);
+    return state.githubRepoCatalog;
+  }
+
+  const query = new URLSearchParams({ limit: "200" });
+  const codeRoot = String(elements.startRunCodeRoot.value || "").trim();
+  if (codeRoot) query.set("code_root", codeRoot);
+  const response = await fetch(`/api/github/repos?${query.toString()}`);
+  if (!response.ok) {
+    throw new Error(`github repos failed with status ${response.status}`);
+  }
+  const payload = await response.json();
+  state.githubStatus = payload.github || state.githubStatus;
+  state.githubStatusUpdatedAt = Date.now();
+  if (!payload.ok) {
+    throw new Error(String(payload.error || "failed to load GitHub repositories"));
+  }
+  state.githubRepoCatalog = normalizeGithubRepoCatalog(payload.repos || []);
+  state.githubRepoCatalogUpdatedAt = Date.now();
+  ensureGithubSelectionInitialized(false);
+  return state.githubRepoCatalog;
+}
+
+async function importSelectedGithubRepos() {
+  const repos = selectedGithubReposFromModal();
+  if (!repos.length) {
+    toastAlert({
+      id: "github_import_none_selected",
+      run_id: "",
+      severity: "warn",
+      title: "No GitHub repos selected",
+      detail: "Select one or more GitHub repositories to import.",
+    });
+    return;
+  }
+  setStartRunGithubBusy(true);
+  try {
+    const response = await fetch("/api/github/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        code_root: String(elements.startRunCodeRoot.value || "").trim(),
+        repos,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok && Number(payload.imported_count || 0) <= 0) {
+      throw new Error(String(payload.error || `github import failed with status ${response.status}`));
+    }
+    if (payload.code_root) {
+      elements.startRunCodeRoot.value = String(payload.code_root);
+    }
+    const importedCount = Number(payload.imported_count || 0);
+    const failedCount = Number(payload.failed_count || 0);
+    if (importedCount > 0) {
+      toastAlert({
+        id: "github_import_success",
+        run_id: "",
+        severity: "ok",
+        title: "GitHub import complete",
+        detail: `${importedCount} repos imported/linked into catalog.`,
+      });
+    }
+    if (failedCount > 0) {
+      const firstError = Array.isArray(payload.failed) && payload.failed.length ? String(payload.failed[0].error || "") : "";
+      toastAlert({
+        id: "github_import_partial",
+        run_id: "",
+        severity: importedCount > 0 ? "warn" : "critical",
+        title: importedCount > 0 ? "Some repos failed to import" : "GitHub import failed",
+        detail: firstError || `${failedCount} repos failed.`,
+      });
+    }
+    if (Array.isArray(payload.repos)) {
+      state.repoCatalog = normalizeRepoCatalog(payload.repos);
+      state.repoCatalogUpdatedAt = Date.now();
+      ensureStartRunSelectionInitialized(false);
+      renderStartRunRepoTable();
+    } else {
+      await loadReposCatalog(true);
+      ensureStartRunSelectionInitialized(false);
+      renderStartRunRepoTable();
+    }
+    await loadGithubRepos(true);
+    renderStartRunGithubRepoTable();
+  } catch (error) {
+    toastAlert({
+      id: "github_import_error",
+      run_id: "",
+      severity: "critical",
+      title: "GitHub import failed",
+      detail: String(error),
+    });
+  } finally {
+    setStartRunGithubBusy(false);
+  }
+}
+
 function ensureStartRunSelectionInitialized(force = false) {
   const globalDefaultTasks = clampInt(elements.startRunTasksPerRepo.value, 0, 0, 1000);
   const globalDefaultMaxCycles = clampInt(elements.startRunMaxCyclesPerRepo.value, 0, 0, 10000);
@@ -4239,6 +4579,11 @@ function setStartRunModalBusy(busy) {
   elements.startRunConfirmBtn.disabled = state.startRunBusy;
   elements.startRunCloseBtn.disabled = state.startRunBusy;
   elements.startRunCancelBtn.disabled = state.startRunBusy;
+  const disabled = state.startRunBusy || state.githubBusy;
+  elements.startRunGithubRefreshBtn.disabled = disabled;
+  elements.startRunGithubImportBtn.disabled = disabled;
+  elements.startRunGithubSelectAllBtn.disabled = disabled;
+  elements.startRunGithubSelectNoneBtn.disabled = disabled;
 }
 
 function setStartRunMode(mode) {
@@ -4461,7 +4806,9 @@ async function openStartRunModal(action = "start") {
   elements.startRunMaxCommitsPerRepo.value = "0";
   state.startRunMode = "auto";
   state.startRunSearch = "";
+  state.githubSearch = "";
   elements.startRunSearch.value = "";
+  elements.startRunGithubSearch.value = "";
   elements.startRunRepoCountMeta.textContent = "Loading repositories...";
   clearNode(elements.startRunRepoTable);
   {
@@ -4473,19 +4820,29 @@ async function openStartRunModal(action = "start") {
     row.appendChild(cell);
     elements.startRunRepoTable.appendChild(row);
   }
+  clearNode(elements.startRunGithubRepoTable);
+  {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 5;
+    cell.className = "muted";
+    cell.textContent = "Loading GitHub status...";
+    row.appendChild(cell);
+    elements.startRunGithubRepoTable.appendChild(row);
+  }
+  elements.startRunGithubMeta.textContent = "Checking GitHub integration...";
+  let localCatalogReady = false;
   try {
     await loadReposCatalog(true);
     ensureStartRunSelectionInitialized(false);
     renderStartRunRepoTable();
-    setStartRunModalBusy(false);
-    return true;
+    localCatalogReady = true;
   } catch (error) {
     const canUseCachedCatalog = Array.isArray(state.repoCatalog) && state.repoCatalog.length > 0;
     if (canUseCachedCatalog) {
       ensureStartRunSelectionInitialized(false);
       renderStartRunRepoTable();
       elements.startRunRepoCountMeta.textContent = "Catalog refresh failed; showing cached repositories.";
-      setStartRunModalBusy(false);
       toastAlert({
         id: "start_run_catalog_stale",
         run_id: "",
@@ -4493,27 +4850,48 @@ async function openStartRunModal(action = "start") {
         title: "Using cached repo catalog",
         detail: String(error),
       });
-      return true;
+      localCatalogReady = true;
+    } else {
+      clearNode(elements.startRunRepoTable);
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 6;
+      cell.className = "muted";
+      cell.textContent = `Failed to load repositories: ${String(error)}`;
+      row.appendChild(cell);
+      elements.startRunRepoTable.appendChild(row);
+      elements.startRunRepoCountMeta.textContent = "Catalog load failed. Retry from Configure Next Run.";
+      toastAlert({
+        id: "start_run_catalog_error",
+        run_id: "",
+        severity: "critical",
+        title: "Repo catalog load failed",
+        detail: String(error),
+      });
     }
-    clearNode(elements.startRunRepoTable);
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 6;
-    cell.className = "muted";
-    cell.textContent = `Failed to load repositories: ${String(error)}`;
-    row.appendChild(cell);
-    elements.startRunRepoTable.appendChild(row);
-    elements.startRunRepoCountMeta.textContent = "Catalog load failed. Retry from Configure Next Run.";
-    setStartRunModalBusy(false);
-    toastAlert({
-      id: "start_run_catalog_error",
-      run_id: "",
-      severity: "critical",
-      title: "Repo catalog load failed",
-      detail: String(error),
-    });
-    return false;
   }
+
+  setStartRunGithubBusy(true);
+  try {
+    await loadGithubRepos(true);
+    renderStartRunGithubRepoTable();
+  } catch (error) {
+    const message = String(error);
+    if (!/auth login|not authenticated|gh\)/i.test(message)) {
+      toastAlert({
+        id: "start_run_github_load_error",
+        run_id: "",
+        severity: "warn",
+        title: "GitHub catalog unavailable",
+        detail: message,
+      });
+    }
+    renderStartRunGithubRepoTable();
+  } finally {
+    setStartRunGithubBusy(false);
+  }
+  setStartRunModalBusy(false);
+  return localCatalogReady;
 }
 
 async function openRunLauncherPage(action = "start") {
@@ -5526,6 +5904,76 @@ elements.startRunSelectNoneBtn.addEventListener("click", () => {
     state.startRunSelection[key] = { ...existing, enabled: false };
   });
   renderStartRunRepoTable();
+});
+
+elements.startRunCodeRoot.addEventListener("change", () => {
+  state.githubRepoCatalogUpdatedAt = 0;
+  state.githubStatusUpdatedAt = 0;
+});
+
+elements.startRunCodeRoot.addEventListener("keydown", async (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  setStartRunGithubBusy(true);
+  try {
+    await loadGithubRepos(true);
+    renderStartRunGithubRepoTable();
+  } catch (error) {
+    toastAlert({
+      id: "github_repos_reload_error",
+      run_id: "",
+      severity: "warn",
+      title: "GitHub fetch failed",
+      detail: String(error),
+    });
+    renderStartRunGithubRepoTable();
+  } finally {
+    setStartRunGithubBusy(false);
+  }
+});
+
+elements.startRunGithubSearch.addEventListener("input", (event) => {
+  state.githubSearch = String(event.target.value || "");
+  renderStartRunGithubRepoTable();
+});
+
+elements.startRunGithubSelectAllBtn.addEventListener("click", () => {
+  (state.githubRepoCatalog || []).forEach((repo) => {
+    const key = githubRepoKey(repo);
+    state.githubSelection[key] = { enabled: true };
+  });
+  renderStartRunGithubRepoTable();
+});
+
+elements.startRunGithubSelectNoneBtn.addEventListener("click", () => {
+  (state.githubRepoCatalog || []).forEach((repo) => {
+    const key = githubRepoKey(repo);
+    state.githubSelection[key] = { enabled: false };
+  });
+  renderStartRunGithubRepoTable();
+});
+
+elements.startRunGithubRefreshBtn.addEventListener("click", async () => {
+  setStartRunGithubBusy(true);
+  try {
+    await loadGithubRepos(true);
+    renderStartRunGithubRepoTable();
+  } catch (error) {
+    toastAlert({
+      id: "github_repos_refresh_error",
+      run_id: "",
+      severity: "warn",
+      title: "GitHub fetch failed",
+      detail: String(error),
+    });
+    renderStartRunGithubRepoTable();
+  } finally {
+    setStartRunGithubBusy(false);
+  }
+});
+
+elements.startRunGithubImportBtn.addEventListener("click", async () => {
+  await importSelectedGithubRepos();
 });
 
 elements.startRunConfirmBtn.addEventListener("click", async () => {

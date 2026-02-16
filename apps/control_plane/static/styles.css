@@ -1669,6 +1669,19 @@ body.compact-mode .command-item {
   accent-color: var(--accent);
 }
 
+#startRunGithubRepoTable tr {
+  cursor: pointer;
+}
+
+#startRunGithubRepoTable input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+#startRunCodeRoot {
+  min-width: min(340px, 62vw);
+}
+
 #startRunConfirmBtn {
   background: #131a16;
   color: #f5f6f1;

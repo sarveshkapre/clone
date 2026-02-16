@@ -14,6 +14,7 @@ import datetime as dt
 import json
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -1766,6 +1767,435 @@ class RunController:
             return [], "no valid repos resolved from selection"
         return resolved, None
 
+    def _default_code_root(self) -> Path:
+        payload = self._read_repos_payload()
+        from_payload = str(payload.get("code_root") or "").strip()
+        if from_payload:
+            return Path(from_payload).expanduser().resolve()
+        env_path = str(os.environ.get("CODE_ROOT") or os.environ.get("CLONE_CODE_ROOT") or "").strip()
+        if env_path:
+            return Path(env_path).expanduser().resolve()
+        clone_parent = self.clone_root.parent
+        if clone_parent != self.clone_root and clone_parent.exists():
+            return clone_parent.resolve()
+        return (Path.home() / "code").resolve()
+
+    def _resolve_code_root(self, raw_value: Any) -> Path:
+        value = str(raw_value or "").strip()
+        if not value:
+            return self._default_code_root()
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = self.clone_root / path
+        return path.resolve()
+
+    def _run_command(
+        self,
+        args: list[str],
+        cwd: Path | None = None,
+        timeout: int = 120,
+    ) -> tuple[int, str, str, str]:
+        try:
+            proc = subprocess.run(
+                args,
+                cwd=str(cwd) if cwd else None,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=timeout,
+            )
+            return proc.returncode, proc.stdout.strip(), proc.stderr.strip(), ""
+        except subprocess.TimeoutExpired:
+            return 124, "", "", f"command timed out: {' '.join(args)}"
+        except OSError as exc:
+            return 127, "", "", str(exc)
+
+    def _git_default_branch(self, repo_path: Path, fallback: str = "main") -> str:
+        rc, out, _, _ = self._run_command(
+            ["git", "-C", str(repo_path), "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+            timeout=20,
+        )
+        if rc == 0 and out:
+            branch = out.split("/", 1)[1] if out.startswith("origin/") else out
+            branch = branch.strip()
+            if branch:
+                return branch
+        rc, out, _, _ = self._run_command(
+            ["git", "-C", str(repo_path), "rev-parse", "--abbrev-ref", "HEAD"],
+            timeout=20,
+        )
+        if rc == 0 and out and out != "HEAD":
+            return out.strip()
+        return fallback
+
+    def _normalize_repo_identifier(self, raw_value: str, fallback_owner: str = "") -> tuple[str, str] | None:
+        value = str(raw_value or "").strip()
+        if not value:
+            return None
+        if value.startswith("https://github.com/"):
+            value = value[len("https://github.com/") :]
+        elif value.startswith("http://github.com/"):
+            value = value[len("http://github.com/") :]
+        elif value.startswith("git@github.com:"):
+            value = value[len("git@github.com:") :]
+        value = value.strip().strip("/")
+        if value.endswith(".git"):
+            value = value[: -4]
+        if not value:
+            return None
+        if "/" not in value:
+            if not fallback_owner:
+                return None
+            value = f"{fallback_owner}/{value}"
+        owner, _, repo = value.partition("/")
+        owner = owner.strip()
+        repo = repo.strip()
+        if not owner or not repo:
+            return None
+        return f"{owner}/{repo}", repo
+
+    def _read_repos_payload(self) -> dict[str, Any]:
+        if not self.monitor.repos_file.exists():
+            return {"repos": []}
+        content = self.monitor.repos_file.read_text(encoding="utf-8", errors="replace")
+        parsed: dict[str, Any] = {}
+        try:
+            decoded = json.loads(content)
+            if isinstance(decoded, dict):
+                parsed = decoded
+        except json.JSONDecodeError:
+            parsed = {"repos": parse_repos_from_yaml_like(content)}
+        repos = [item for item in parsed.get("repos", []) if isinstance(item, dict)]
+        parsed["repos"] = repos
+        return parsed
+
+    def _write_repos_payload(self, payload: dict[str, Any]) -> None:
+        self.monitor.repos_file.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = self.monitor.repos_file.with_suffix(".tmp")
+        tmp_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        tmp_path.replace(self.monitor.repos_file)
+        with self.monitor._cache_lock:
+            self.monitor._repos_cache = None
+            self.monitor._commit_cache.clear()
+            self.monitor._run_detailed_commits_cache.clear()
+
+    def _upsert_catalog_entries(self, entries: list[dict[str, Any]], code_root: Path) -> tuple[int, int]:
+        payload = self._read_repos_payload()
+        repos = [dict(item) for item in payload.get("repos", []) if isinstance(item, dict)]
+        by_path: dict[str, int] = {}
+        for idx, item in enumerate(repos):
+            key = str(item.get("path") or "").strip()
+            if key:
+                by_path[key] = idx
+
+        added = 0
+        updated = 0
+        changed = False
+        for entry in entries:
+            raw_path = str(entry.get("path") or "").strip()
+            if not raw_path:
+                continue
+            normalized: dict[str, Any] = {
+                "name": str(entry.get("name") or Path(raw_path).name).strip() or Path(raw_path).name or raw_path,
+                "path": raw_path,
+                "branch": str(entry.get("branch") or "main").strip() or "main",
+            }
+            objective = str(entry.get("objective") or "").strip()
+            if objective:
+                normalized["objective"] = objective
+            for field, clamp_max in (("tasks_per_repo", 1000), ("max_cycles_per_run", 10000), ("max_commits_per_run", 10000)):
+                value = safe_int(entry.get(field), -1)
+                if value >= 0:
+                    normalized[field] = max(0, min(value, clamp_max))
+
+            existing_idx = by_path.get(raw_path)
+            if existing_idx is None:
+                repos.append(normalized)
+                by_path[raw_path] = len(repos) - 1
+                added += 1
+                changed = True
+                continue
+
+            merged = dict(repos[existing_idx])
+            merged["name"] = normalized["name"]
+            merged["path"] = normalized["path"]
+            merged["branch"] = normalized["branch"]
+            if "objective" in normalized:
+                merged["objective"] = normalized["objective"]
+            elif "objective" not in merged:
+                merged["objective"] = ""
+            for field in ("tasks_per_repo", "max_cycles_per_run", "max_commits_per_run"):
+                if field in normalized:
+                    merged[field] = normalized[field]
+            if merged != repos[existing_idx]:
+                repos[existing_idx] = merged
+                updated += 1
+                changed = True
+
+        code_root_text = str(code_root)
+        if payload.get("code_root") != code_root_text:
+            payload["code_root"] = code_root_text
+            changed = True
+        if payload.get("repos") != repos:
+            repos.sort(key=lambda item: str(item.get("name") or "").lower())
+            payload["repos"] = repos
+            changed = True
+        if changed:
+            payload["generated_at"] = iso_utc(utc_now())
+            self._write_repos_payload(payload)
+        return added, updated
+
+    def github_status(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+        request = request or {}
+        code_root = self._resolve_code_root(request.get("code_root"))
+        gh_path = shutil.which("gh") or ""
+        repos_file = str(self.monitor.repos_file)
+        if not gh_path:
+            return {
+                "ok": False,
+                "gh_available": False,
+                "authenticated": False,
+                "login": "",
+                "code_root": str(code_root),
+                "code_root_exists": code_root.exists(),
+                "repos_file": repos_file,
+                "error": "GitHub CLI (gh) is not installed",
+            }
+
+        rc, out, err, command_error = self._run_command(["gh", "auth", "status", "--hostname", "github.com"], timeout=20)
+        if command_error:
+            return {
+                "ok": False,
+                "gh_available": True,
+                "authenticated": False,
+                "login": "",
+                "code_root": str(code_root),
+                "code_root_exists": code_root.exists(),
+                "repos_file": repos_file,
+                "error": command_error,
+            }
+        authenticated = rc == 0
+        login = ""
+        if authenticated:
+            user_rc, user_out, _, _ = self._run_command(["gh", "api", "user", "--jq", ".login"], timeout=20)
+            if user_rc == 0 and user_out:
+                login = user_out.strip()
+        error = ""
+        if not authenticated:
+            error = err or out or "not authenticated"
+        return {
+            "ok": authenticated,
+            "gh_available": True,
+            "authenticated": authenticated,
+            "login": login,
+            "code_root": str(code_root),
+            "code_root_exists": code_root.exists(),
+            "repos_file": repos_file,
+            "error": error,
+        }
+
+    def github_repos(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+        request = request or {}
+        status = self.github_status(request)
+        if not status.get("gh_available"):
+            return {
+                "ok": False,
+                "error": str(status.get("error") or "GitHub CLI (gh) is not installed"),
+                "github": status,
+                "repos": [],
+            }
+        if not status.get("authenticated"):
+            return {
+                "ok": False,
+                "error": str(status.get("error") or "Run `gh auth login` first"),
+                "github": status,
+                "repos": [],
+            }
+
+        owner = str(request.get("owner") or status.get("login") or "").strip()
+        if not owner:
+            return {"ok": False, "error": "unable to determine GitHub owner", "github": status, "repos": []}
+        limit = max(1, min(safe_int(request.get("limit"), 150), 500))
+        rc, out, err, command_error = self._run_command(
+            [
+                "gh",
+                "repo",
+                "list",
+                owner,
+                "--limit",
+                str(limit),
+                "--json",
+                "name,nameWithOwner,owner,isPrivate,isFork,description,updatedAt,defaultBranchRef,url",
+            ],
+            timeout=60,
+        )
+        if command_error:
+            return {"ok": False, "error": command_error, "github": status, "repos": []}
+        if rc != 0:
+            return {"ok": False, "error": err or out or "failed to list GitHub repos", "github": status, "repos": []}
+
+        try:
+            decoded = json.loads(out or "[]")
+        except json.JSONDecodeError:
+            decoded = []
+        raw_repos = decoded if isinstance(decoded, list) else []
+        code_root = Path(str(status.get("code_root") or ""))
+        catalog = self.monitor.repos_catalog()
+        catalog_paths = {str(item.get("path") or "") for item in catalog}
+
+        repos: list[dict[str, Any]] = []
+        for item in raw_repos:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name") or "").strip()
+            owner_obj = item.get("owner") if isinstance(item.get("owner"), dict) else {}
+            owner_login = str(owner_obj.get("login") or owner).strip() or owner
+            name_with_owner = str(item.get("nameWithOwner") or f"{owner_login}/{name}").strip()
+            if not name or not name_with_owner:
+                continue
+            local_path = (code_root / name).resolve()
+            local_git = local_path.joinpath(".git").exists()
+            in_catalog = str(local_path) in catalog_paths
+            default_branch_ref = item.get("defaultBranchRef") if isinstance(item.get("defaultBranchRef"), dict) else {}
+            default_branch = str(default_branch_ref.get("name") or "main").strip() or "main"
+            repos.append(
+                {
+                    "name": name,
+                    "name_with_owner": name_with_owner,
+                    "owner": owner_login,
+                    "description": str(item.get("description") or "").strip(),
+                    "is_private": bool(item.get("isPrivate")),
+                    "is_fork": bool(item.get("isFork")),
+                    "updated_at": str(item.get("updatedAt") or "").strip(),
+                    "default_branch": default_branch,
+                    "url": str(item.get("url") or "").strip(),
+                    "path_candidate": str(local_path),
+                    "local_exists": local_git,
+                    "in_catalog": in_catalog,
+                    "imported": in_catalog or local_git,
+                }
+            )
+        repos.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        return {
+            "ok": True,
+            "github": status,
+            "owner": owner,
+            "count": len(repos),
+            "repos": repos,
+        }
+
+    def github_import(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+        request = request or {}
+        status = self.github_status(request)
+        if not status.get("gh_available"):
+            return {"ok": False, "error": str(status.get("error") or "GitHub CLI (gh) is not installed")}
+        if not status.get("authenticated"):
+            return {"ok": False, "error": str(status.get("error") or "Run `gh auth login` first")}
+
+        raw_repos = request.get("repos")
+        if not isinstance(raw_repos, list) or not raw_repos:
+            return {"ok": False, "error": "repos must be a non-empty list"}
+
+        code_root = self._resolve_code_root(request.get("code_root"))
+        code_root.mkdir(parents=True, exist_ok=True)
+        fallback_owner = str(status.get("login") or "").strip()
+
+        imported: list[dict[str, Any]] = []
+        failed: list[dict[str, Any]] = []
+        upserts: list[dict[str, Any]] = []
+
+        for raw_item in raw_repos:
+            raw_identifier = ""
+            requested_name = ""
+            requested_branch = ""
+            requested_objective = ""
+            if isinstance(raw_item, dict):
+                raw_identifier = str(
+                    raw_item.get("name_with_owner")
+                    or raw_item.get("nameWithOwner")
+                    or raw_item.get("full_name")
+                    or raw_item.get("repo")
+                    or ""
+                ).strip()
+                requested_name = str(raw_item.get("name") or "").strip()
+                requested_branch = str(raw_item.get("default_branch") or raw_item.get("branch") or "").strip()
+                requested_objective = str(raw_item.get("objective") or "").strip()
+            elif isinstance(raw_item, str):
+                raw_identifier = raw_item.strip()
+            else:
+                continue
+
+            normalized = self._normalize_repo_identifier(raw_identifier, fallback_owner=fallback_owner)
+            if normalized is None:
+                failed.append({"repo": raw_identifier, "error": "invalid repository identifier"})
+                continue
+            name_with_owner, repo_name = normalized
+            local_name = requested_name or repo_name
+            target_path = (code_root / local_name).resolve()
+
+            if target_path.exists() and not target_path.joinpath(".git").exists():
+                failed.append(
+                    {
+                        "repo": name_with_owner,
+                        "path": str(target_path),
+                        "error": "target path exists but is not a git repository",
+                    }
+                )
+                continue
+
+            clone_performed = False
+            clone_error = ""
+            if not target_path.exists():
+                rc, out, err, command_error = self._run_command(
+                    ["gh", "repo", "clone", name_with_owner, str(target_path)],
+                    timeout=600,
+                )
+                clone_performed = rc == 0
+                if command_error:
+                    clone_error = command_error
+                elif rc != 0:
+                    clone_error = err or out or "clone failed"
+                if clone_error:
+                    failed.append({"repo": name_with_owner, "path": str(target_path), "error": clone_error})
+                    continue
+
+            branch = requested_branch or self._git_default_branch(target_path, fallback="main")
+            upserts.append(
+                {
+                    "name": local_name,
+                    "path": str(target_path),
+                    "branch": branch,
+                    "objective": requested_objective,
+                }
+            )
+            imported.append(
+                {
+                    "repo": name_with_owner,
+                    "name": local_name,
+                    "path": str(target_path),
+                    "branch": branch,
+                    "status": "cloned" if clone_performed else "already_local",
+                }
+            )
+
+        added = 0
+        updated = 0
+        if upserts:
+            added, updated = self._upsert_catalog_entries(upserts, code_root=code_root)
+
+        return {
+            "ok": len(imported) > 0 and len(failed) == 0,
+            "code_root": str(code_root),
+            "repos_file": str(self.monitor.repos_file),
+            "imported_count": len(imported),
+            "failed_count": len(failed),
+            "added_to_catalog": added,
+            "updated_in_catalog": updated,
+            "imported": imported,
+            "failed": failed,
+            "repos": self.monitor.repos_catalog(),
+        }
+
     def status_payload(self, latest_run: dict[str, Any] | None = None) -> dict[str, Any]:
         if latest_run is None:
             latest_run = self.monitor.latest_run()
@@ -3004,6 +3434,23 @@ class APIHandler(SimpleHTTPRequestHandler):
             self._send_json({"generated_at": iso_utc(utc_now()), "repos": self.monitor.repos_catalog()})
             return
 
+        if normalized_path == "/api/github/status":
+            payload = self.controller.github_status({"code_root": query.get("code_root", [""])[0]})
+            self._send_json({"generated_at": iso_utc(utc_now()), "ok": bool(payload.get("ok")), "github": payload})
+            return
+
+        if normalized_path == "/api/github/repos":
+            payload = self.controller.github_repos(
+                {
+                    "code_root": query.get("code_root", [""])[0],
+                    "owner": query.get("owner", [""])[0],
+                    "limit": query.get("limit", ["150"])[0],
+                }
+            )
+            payload["generated_at"] = iso_utc(utc_now())
+            self._send_json(payload)
+            return
+
         if normalized_path == "/api/repo_details":
             repo = query.get("repo", [""])[0].strip()
             if not repo:
@@ -3144,6 +3591,15 @@ class APIHandler(SimpleHTTPRequestHandler):
                 self._send_json({"ok": False, "error": f"task not found: {task_id}"}, status=404)
                 return
             self._send_json({"ok": True, "task": task, "summary": self.task_queue.summary(limit=20)})
+            return
+
+        if parsed_path == "/api/github/import":
+            payload = self.controller.github_import(request)
+            payload["generated_at"] = iso_utc(utc_now())
+            status = 200 if payload.get("ok") else 400
+            if payload.get("imported_count", 0) > 0:
+                status = 200
+            self._send_json(payload, status=status)
             return
 
         if parsed_path == "/api/agent/config":

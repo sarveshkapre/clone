@@ -645,6 +645,37 @@
           </div>
           <div class="panel-head subhead modal-subhead">
             <div class="inline-controls">
+              <label for="startRunCodeRoot">Code Root</label>
+              <input id="startRunCodeRoot" type="text" placeholder="~/code" />
+              <button id="startRunGithubRefreshBtn" type="button">Fetch GitHub Repos</button>
+              <button id="startRunGithubImportBtn" type="button">Import Selected</button>
+            </div>
+            <span class="meta" id="startRunGithubMeta"></span>
+          </div>
+          <div class="panel-head subhead modal-subhead">
+            <div class="inline-controls">
+              <label for="startRunGithubSearch">GitHub Search</label>
+              <input id="startRunGithubSearch" type="search" placeholder="owner/repo" />
+              <button id="startRunGithubSelectAllBtn" type="button">Select All</button>
+              <button id="startRunGithubSelectNoneBtn" type="button">Select None</button>
+            </div>
+          </div>
+          <div class="table-wrap modal-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Use</th>
+                  <th>Repo</th>
+                  <th>Visibility</th>
+                  <th>Status</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="startRunGithubRepoTable"></tbody>
+            </table>
+          </div>
+          <div class="panel-head subhead modal-subhead">
+            <div class="inline-controls">
               <label><input id="startRunModeAuto" type="radio" name="startRunMode" value="auto" checked /> Auto (all repos)</label>
               <label><input id="startRunModeCustom" type="radio" name="startRunMode" value="custom" /> Custom select</label>
             </div>

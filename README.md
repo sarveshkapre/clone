@@ -227,6 +227,7 @@ More details: `apps/control_plane/README.md`
 Highlights:
 - live alerts + toasts
 - run controls (`start` / `stop` / `restart`)
+- GitHub onboarding in Run Launcher: fetch your own repos via `gh`, import selected repos into any code root, and auto-upsert catalog entries
 - duplicate-loop normalization (`Normalize Loops`)
 - optional webhook notifications (rules by alert type + cooldown + test send)
 - stream rail UX (pause/resume, refresh, UTC/local time mode, compact mode, keyboard shortcuts)
