@@ -114,6 +114,13 @@ const elements = {
   taskQueuePriority: document.getElementById("taskQueuePriority"),
   taskQueueAddBtn: document.getElementById("taskQueueAddBtn"),
   taskQueueTable: document.getElementById("taskQueueTable"),
+  liveExecutionMeta: document.getElementById("liveExecutionMeta"),
+  liveEventsMeta: document.getElementById("liveEventsMeta"),
+  liveEventStream: document.getElementById("liveEventStream"),
+  liveCommitsMeta: document.getElementById("liveCommitsMeta"),
+  liveCommitTable: document.getElementById("liveCommitTable"),
+  liveRunningMeta: document.getElementById("liveRunningMeta"),
+  liveRunningRepos: document.getElementById("liveRunningRepos"),
   commitTable: document.getElementById("commitTable"),
   repoStates: document.getElementById("repoStates"),
   repoStateMeta: document.getElementById("repoStateMeta"),
@@ -171,6 +178,7 @@ const ALERT_DEFAULTS = {
   noCommitMinutes: 60,
   lockSkipThreshold: 25,
 };
+const EVENT_REPO_PATTERN = /\brepo=([^ ]+)/i;
 
 const DETAILS_REFRESH_MS = 30000;
 const ACTIVE_RUN_DETAILS_REFRESH_MS = 10000;
@@ -3044,6 +3052,154 @@ function renderCommitTable(commits) {
   });
 }
 
+function eventRepoName(event) {
+  const explicit = String(event?.repo || "").trim();
+  if (explicit) return explicit;
+  const message = String(event?.message || "");
+  const match = message.match(EVENT_REPO_PATTERN);
+  if (match && match[1]) return String(match[1]).trim();
+  return "";
+}
+
+function renderLiveExecutionBoard(snapshot) {
+  if (
+    !elements.liveExecutionMeta ||
+    !elements.liveEventsMeta ||
+    !elements.liveEventStream ||
+    !elements.liveCommitsMeta ||
+    !elements.liveCommitTable ||
+    !elements.liveRunningMeta ||
+    !elements.liveRunningRepos
+  ) {
+    return;
+  }
+
+  const run = snapshot?.latest_run || {};
+  const runId = formatRunId(run?.run_id || "");
+  const runState = String(run?.state || "unknown");
+  const events = Array.isArray(snapshot?.latest_events) ? snapshot.latest_events : [];
+  const commits = Array.isArray(snapshot?.recent_commits) ? snapshot.recent_commits : [];
+  const repoStates = Object.entries(run?.repo_states || {});
+
+  elements.liveExecutionMeta.textContent = `${runId} • ${runState} • ${events.length} events • ${commits.length} commits`;
+
+  clearNode(elements.liveRunningRepos);
+  const latestEventByRepo = new Map();
+  [...events]
+    .slice()
+    .reverse()
+    .forEach((event) => {
+      const repo = eventRepoName(event);
+      if (repo && !latestEventByRepo.has(repo)) latestEventByRepo.set(repo, event);
+    });
+  const activeStates = repoStates.filter(([, rawState]) => {
+    const text = String(rawState || "");
+    return text === "starting" || text.startsWith("running");
+  });
+  elements.liveRunningMeta.textContent = `${activeStates.length} active • ${repoStates.length} repos in run`;
+
+  if (!repoStates.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No active run repo states yet.";
+    elements.liveRunningRepos.appendChild(empty);
+  } else {
+    repoStates
+      .sort((left, right) => {
+        const leftActive = String(left[1] || "").startsWith("running") || String(left[1] || "") === "starting";
+        const rightActive = String(right[1] || "").startsWith("running") || String(right[1] || "") === "starting";
+        if (leftActive !== rightActive) return leftActive ? -1 : 1;
+        return String(left[0]).localeCompare(String(right[0]));
+      })
+      .slice(0, 28)
+      .forEach(([repo, rawState]) => {
+        const pill = document.createElement("div");
+        const klass = classifyRepoState(rawState);
+        pill.className = `repo-pill ${klass}`;
+
+        const name = document.createElement("span");
+        name.textContent = String(repo || "");
+
+        const status = document.createElement("span");
+        status.className = "status";
+        status.textContent = String(rawState || "").replace("skipped:", "skip/");
+
+        const latestRepoEvent = latestEventByRepo.get(repo);
+        if (latestRepoEvent) {
+          const hint = `${formatUtc(latestRepoEvent.ts)} • ${String(latestRepoEvent.message || "").slice(0, 160)}`;
+          pill.title = hint;
+        }
+
+        pill.append(name, status);
+        elements.liveRunningRepos.appendChild(pill);
+      });
+  }
+
+  clearNode(elements.liveEventStream);
+  const recentEvents = [...events].slice(-28).reverse();
+  elements.liveEventsMeta.textContent = `${recentEvents.length} latest`;
+  if (!recentEvents.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = "No structured events yet.";
+    elements.liveEventStream.appendChild(empty);
+  } else {
+    recentEvents.forEach((event) => {
+      const line = document.createElement("div");
+      line.className = "line live-event-line";
+
+      const ts = document.createElement("span");
+      ts.className = "mono";
+      ts.textContent = `${formatUtc(event.ts)} `;
+      ts.title = formatRelativeIso(event.ts);
+
+      const repo = eventRepoName(event);
+      const prefix = repo ? `[${repo}] ` : "";
+      const message = document.createElement("span");
+      message.textContent = `${prefix}${String(event.message || "")}`;
+
+      line.append(ts, message);
+      elements.liveEventStream.appendChild(line);
+    });
+  }
+
+  clearNode(elements.liveCommitTable);
+  const recentCommits = commits.slice(0, 20);
+  elements.liveCommitsMeta.textContent = `${recentCommits.length} latest`;
+  if (!recentCommits.length) {
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 4;
+    cell.className = "muted";
+    cell.textContent = "No commits in current window.";
+    row.appendChild(cell);
+    elements.liveCommitTable.appendChild(row);
+  } else {
+    recentCommits.forEach((item) => {
+      const row = document.createElement("tr");
+
+      const time = document.createElement("td");
+      time.className = "mono";
+      time.textContent = formatUtc(item.time_utc);
+      time.title = formatRelativeIso(item.time_utc);
+
+      const repo = document.createElement("td");
+      repo.textContent = String(item.repo || "");
+
+      const hash = document.createElement("td");
+      hash.className = "mono";
+      hash.textContent = String(item.hash || "").slice(0, 10);
+      hash.title = String(item.hash || "");
+
+      const subject = document.createElement("td");
+      subject.textContent = String(item.subject || "");
+
+      row.append(time, repo, hash, subject);
+      elements.liveCommitTable.appendChild(row);
+    });
+  }
+}
+
 function classifyRepoState(rawState) {
   const stateText = String(rawState || "unknown");
   if (stateText.startsWith("running")) return "running";
@@ -5226,6 +5382,7 @@ function renderSnapshot(snapshot) {
     renderTaskQueue();
   }
   renderCommitTable(snapshot.recent_commits || []);
+  renderLiveExecutionBoard(snapshot);
   renderRunHistory(state.runHistory);
 
     const latestRunId = snapshot?.latest_run?.run_id || null;

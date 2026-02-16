@@ -106,6 +106,7 @@
         </div>
         <div id="jumpNav" class="jump-nav" aria-label="Section navigation">
           <button type="button" data-target="actionCenterSection">Triage</button>
+          <button type="button" data-target="liveExecutionSection">Live Board</button>
           <button type="button" data-target="alertsSection">Alerts</button>
           <button type="button" data-target="controlsSection">Controls</button>
           <button type="button" data-target="notificationsSection">Notifications</button>
@@ -329,6 +330,51 @@
             <tbody id="taskQueueTable"></tbody>
           </table>
         </div>
+      </section>
+
+      <section id="liveExecutionSection" class="layout-row" data-routes="overview runs">
+        <article id="liveExecutionBoardPanel" class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Live Execution Board</h2>
+            <span class="meta" id="liveExecutionMeta">Waiting for runtime data...</span>
+          </div>
+          <div class="live-board-grid">
+            <section class="live-board-card">
+              <div class="live-board-card-head">
+                <h3>Latest Events</h3>
+                <span class="meta" id="liveEventsMeta">-</span>
+              </div>
+              <div id="liveEventStream" class="terminal-list live-event-stream"></div>
+            </section>
+            <section class="live-board-card">
+              <div class="live-board-card-head">
+                <h3>Latest Commits</h3>
+                <span class="meta" id="liveCommitsMeta">-</span>
+              </div>
+              <div class="table-wrap live-mini-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Repo</th>
+                      <th>Hash</th>
+                      <th>Subject</th>
+                    </tr>
+                  </thead>
+                  <tbody id="liveCommitTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </article>
+
+        <article id="liveActiveReposPanel" class="panel">
+          <div class="panel-head">
+            <h2>Active Repos</h2>
+            <span class="meta" id="liveRunningMeta">-</span>
+          </div>
+          <div id="liveRunningRepos" class="repo-states"></div>
+        </article>
       </section>
 
       <section id="commitStreamSection" class="layout-row" data-routes="runs repos">

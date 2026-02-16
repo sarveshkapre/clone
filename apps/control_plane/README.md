@@ -72,6 +72,7 @@ Defaults:
 - Critical alert when duplicate `run_clone_loop.sh` process groups are detected
 - Live toast notifications for new warn/critical alerts
 - Run controls (start/stop/restart) for `scripts/run_clone_loop.sh`
+- Live Execution Board for active repos, latest events, and latest commits in one real-time panel
 - Run Launcher GitHub import flow (detect `gh` auth, fetch owner repos, select/import into chosen code root, auto-upsert managed catalog when enabled)
 - Run Launcher local scan flow (scan selected `Code Root` for git repos and include them in launch selection)
 - `Normalize Loops` control to collapse duplicate loop process groups safely
