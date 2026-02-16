@@ -45,6 +45,9 @@ SECURITY_AUDIT_MAX_FINDINGS="${SECURITY_AUDIT_MAX_FINDINGS:-120}"
 PARALLEL_REPOS="${PARALLEL_REPOS:-5}"
 BACKLOG_MIN_ITEMS="${BACKLOG_MIN_ITEMS:-20}"
 UIUX_GATE_ENABLED="${UIUX_GATE_ENABLED:-1}"
+STATE_DB_ENABLED="${STATE_DB_ENABLED:-1}"
+STATE_DB_QUEUE_SYNC_ENABLED="${STATE_DB_QUEUE_SYNC_ENABLED:-1}"
+STATE_DB_INTENT_SYNC_ENABLED="${STATE_DB_INTENT_SYNC_ENABLED:-1}"
 TASK_QUEUE_FILE="${TASK_QUEUE_FILE:-task_queue.json}"
 TASK_QUEUE_MAX_ITEMS_PER_REPO="${TASK_QUEUE_MAX_ITEMS_PER_REPO:-5}"
 TASK_QUEUE_AUTO_CREATE="${TASK_QUEUE_AUTO_CREATE:-1}"
@@ -171,6 +174,21 @@ if ! [[ "$UIUX_GATE_ENABLED" =~ ^[01]$ ]]; then
   exit 1
 fi
 
+if ! [[ "$STATE_DB_ENABLED" =~ ^[01]$ ]]; then
+  echo "STATE_DB_ENABLED must be 0 or 1, got: $STATE_DB_ENABLED" >&2
+  exit 1
+fi
+
+if ! [[ "$STATE_DB_QUEUE_SYNC_ENABLED" =~ ^[01]$ ]]; then
+  echo "STATE_DB_QUEUE_SYNC_ENABLED must be 0 or 1, got: $STATE_DB_QUEUE_SYNC_ENABLED" >&2
+  exit 1
+fi
+
+if ! [[ "$STATE_DB_INTENT_SYNC_ENABLED" =~ ^[01]$ ]]; then
+  echo "STATE_DB_INTENT_SYNC_ENABLED must be 0 or 1, got: $STATE_DB_INTENT_SYNC_ENABLED" >&2
+  exit 1
+fi
+
 if ! [[ "$TASK_QUEUE_MAX_ITEMS_PER_REPO" =~ ^[1-9][0-9]*$ ]]; then
   echo "TASK_QUEUE_MAX_ITEMS_PER_REPO must be a positive integer, got: $TASK_QUEUE_MAX_ITEMS_PER_REPO" >&2
   exit 1
@@ -206,6 +224,8 @@ if ! [[ "$MAX_HOURS" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
+STATE_DB_FILE="${STATE_DB_FILE:-$LOG_DIR/clone_state.db}"
+
 start_epoch="$(date +%s)"
 deadline_epoch=0
 if (( MAX_HOURS > 0 )); then
@@ -219,6 +239,241 @@ runtime_deadline_hit() {
   local now_epoch
   now_epoch="$(date +%s)"
   (( now_epoch >= deadline_epoch ))
+}
+
+state_db_ready() {
+  if [[ "$STATE_DB_ENABLED" != "1" ]]; then
+    return 1
+  fi
+  command -v sqlite3 >/dev/null 2>&1 || return 1
+  return 0
+}
+
+sql_escape() {
+  local value="${1:-}"
+  printf '%s' "$value" | sed "s/'/''/g"
+}
+
+state_db_exec() {
+  local sql="$1"
+  state_db_ready || return 0
+  sqlite3 "$STATE_DB_FILE" "$sql" >/dev/null 2>&1 || return 1
+  return 0
+}
+
+init_state_db() {
+  state_db_ready || return 0
+  mkdir -p "$(dirname "$STATE_DB_FILE")"
+  state_db_exec "PRAGMA journal_mode=WAL;"
+  state_db_exec "PRAGMA synchronous=NORMAL;"
+  state_db_exec "CREATE TABLE IF NOT EXISTS run_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    level TEXT NOT NULL,
+    message TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    repo TEXT,
+    pass TEXT
+  );"
+  state_db_exec "CREATE TABLE IF NOT EXISTS task_queue_snapshot (
+    id TEXT PRIMARY KEY,
+    status TEXT,
+    repo TEXT,
+    repo_path TEXT,
+    title TEXT,
+    priority INTEGER,
+    source TEXT,
+    created_at TEXT,
+    updated_at TEXT,
+    claimed_at TEXT,
+    done_at TEXT,
+    blocked_at TEXT,
+    retry_count INTEGER,
+    queue_file TEXT,
+    synced_at TEXT
+  );"
+  state_db_exec "CREATE TABLE IF NOT EXISTS intent_snapshot (
+    id TEXT PRIMARY KEY,
+    status TEXT,
+    project TEXT,
+    summary TEXT,
+    repo_name TEXT,
+    repo_path TEXT,
+    objective TEXT,
+    updated_at TEXT,
+    last_error TEXT,
+    intents_file TEXT,
+    synced_at TEXT
+  );"
+  state_db_exec "CREATE TABLE IF NOT EXISTS security_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    repo TEXT NOT NULL,
+    pass TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    critical INTEGER NOT NULL,
+    high INTEGER NOT NULL,
+    medium INTEGER NOT NULL,
+    total INTEGER NOT NULL,
+    report TEXT
+  );"
+}
+
+state_db_insert_event() {
+  local ts="$1"
+  local level="$2"
+  local message="$3"
+  local repo="${4:-}"
+  local pass="${5:-}"
+  local ts_e level_e message_e run_id_e repo_e pass_e
+  state_db_ready || return 0
+  ts_e="$(sql_escape "$ts")"
+  level_e="$(sql_escape "$level")"
+  message_e="$(sql_escape "$message")"
+  run_id_e="$(sql_escape "$RUN_ID")"
+  repo_e="$(sql_escape "$repo")"
+  pass_e="$(sql_escape "$pass")"
+  state_db_exec "INSERT INTO run_events (ts, level, message, run_id, repo, pass)
+    VALUES ('$ts_e', '$level_e', '$message_e', '$run_id_e', '$repo_e', '$pass_e');" || true
+}
+
+state_db_sync_task_queue_snapshot() {
+  local now queue_file_e
+  local id status repo repo_path title priority source created_at updated_at claimed_at done_at blocked_at retry_count
+  if [[ "$STATE_DB_QUEUE_SYNC_ENABLED" != "1" ]]; then
+    return 0
+  fi
+  state_db_ready || return 0
+  [[ -f "$TASK_QUEUE_FILE" ]] || return 0
+
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  queue_file_e="$(sql_escape "$TASK_QUEUE_FILE")"
+  state_db_exec "BEGIN TRANSACTION;" || return 0
+  state_db_exec "DELETE FROM task_queue_snapshot WHERE queue_file = '$queue_file_e';" || true
+  while IFS=$'\t' read -r id status repo repo_path title priority source created_at updated_at claimed_at done_at blocked_at retry_count; do
+    [[ -z "$id" ]] && continue
+    [[ "$priority" =~ ^[0-9]+$ ]] || priority=3
+    [[ "$retry_count" =~ ^[0-9]+$ ]] || retry_count=0
+    state_db_exec "INSERT OR REPLACE INTO task_queue_snapshot (
+      id, status, repo, repo_path, title, priority, source, created_at, updated_at, claimed_at, done_at, blocked_at, retry_count, queue_file, synced_at
+    ) VALUES (
+      '$(sql_escape "$id")',
+      '$(sql_escape "$status")',
+      '$(sql_escape "$repo")',
+      '$(sql_escape "$repo_path")',
+      '$(sql_escape "$title")',
+      $priority,
+      '$(sql_escape "$source")',
+      '$(sql_escape "$created_at")',
+      '$(sql_escape "$updated_at")',
+      '$(sql_escape "$claimed_at")',
+      '$(sql_escape "$done_at")',
+      '$(sql_escape "$blocked_at")',
+      $retry_count,
+      '$queue_file_e',
+      '$(sql_escape "$now")'
+    );" || true
+  done < <(
+    jq -r '
+      (.tasks // [])[]
+      | [
+          (.id // ""),
+          (.status // ""),
+          (.repo // ""),
+          (.repo_path // ""),
+          (.title // ""),
+          ((.priority // 3) | tostring),
+          (.source // ""),
+          (.created_at // ""),
+          (.updated_at // ""),
+          (.claimed_at // ""),
+          (.done_at // ""),
+          (.blocked_at // ""),
+          ((.retry_count // 0) | tostring)
+        ]
+      | @tsv
+    ' "$TASK_QUEUE_FILE" 2>/dev/null || true
+  )
+  state_db_exec "COMMIT;" || state_db_exec "ROLLBACK;" || true
+}
+
+state_db_sync_intent_snapshot() {
+  local now intents_file_e
+  local id status project summary repo_name repo_path objective updated_at last_error
+  if [[ "$STATE_DB_INTENT_SYNC_ENABLED" != "1" ]]; then
+    return 0
+  fi
+  state_db_ready || return 0
+  [[ -f "$INTENTS_FILE" ]] || return 0
+
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  intents_file_e="$(sql_escape "$INTENTS_FILE")"
+  state_db_exec "BEGIN TRANSACTION;" || return 0
+  state_db_exec "DELETE FROM intent_snapshot WHERE intents_file = '$intents_file_e';" || true
+  while IFS=$'\t' read -r id status project summary repo_name repo_path objective updated_at last_error; do
+    [[ -z "$id" ]] && continue
+    state_db_exec "INSERT OR REPLACE INTO intent_snapshot (
+      id, status, project, summary, repo_name, repo_path, objective, updated_at, last_error, intents_file, synced_at
+    ) VALUES (
+      '$(sql_escape "$id")',
+      '$(sql_escape "$status")',
+      '$(sql_escape "$project")',
+      '$(sql_escape "$summary")',
+      '$(sql_escape "$repo_name")',
+      '$(sql_escape "$repo_path")',
+      '$(sql_escape "$objective")',
+      '$(sql_escape "$updated_at")',
+      '$(sql_escape "$last_error")',
+      '$intents_file_e',
+      '$(sql_escape "$now")'
+    );" || true
+  done < <(
+    jq -r '
+      (.intents // [])[]
+      | [
+          (.id // ""),
+          (.status // ""),
+          (.project // ""),
+          (.summary // ""),
+          (.repo_name // ""),
+          (.repo_path // ""),
+          (.objective // ""),
+          (.updated_at // ""),
+          (.last_error // "")
+        ]
+      | @tsv
+    ' "$INTENTS_FILE" 2>/dev/null || true
+  )
+  state_db_exec "COMMIT;" || state_db_exec "ROLLBACK;" || true
+}
+
+state_db_insert_security_audit() {
+  local repo="$1"
+  local pass="$2"
+  local reason="$3"
+  local critical="$4"
+  local high="$5"
+  local medium="$6"
+  local total="$7"
+  local report="$8"
+  local now
+  state_db_ready || return 0
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  state_db_exec "INSERT INTO security_audit_log (
+    ts, run_id, repo, pass, reason, critical, high, medium, total, report
+  ) VALUES (
+    '$(sql_escape "$now")',
+    '$(sql_escape "$RUN_ID")',
+    '$(sql_escape "$repo")',
+    '$(sql_escape "$pass")',
+    '$(sql_escape "$reason")',
+    $critical,
+    $high,
+    $medium,
+    $total,
+    '$(sql_escape "$report")'
+  );" || true
 }
 
 repo_count_from_file() {
@@ -249,10 +504,12 @@ run_idea_processor() {
 
 run_intent_processor() {
   if [[ "$INTENT_BOOTSTRAP_ENABLED" != "1" ]]; then
+    state_db_sync_intent_snapshot
     return 0
   fi
   if [[ ! -x "$INTENT_PROCESSOR_SCRIPT" ]]; then
     log_event WARN "Intent processor not executable: $INTENT_PROCESSOR_SCRIPT"
+    state_db_sync_intent_snapshot
     return 0
   fi
 
@@ -267,6 +524,7 @@ run_intent_processor() {
   else
     log_event INFO "INTENTS complete file=$INTENTS_FILE"
   fi
+  state_db_sync_intent_snapshot
 }
 
 log_event() {
@@ -276,6 +534,7 @@ log_event() {
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "[$ts] [$level] $message" | tee -a "$RUN_LOG"
   echo "{\"ts\":\"$ts\",\"level\":\"$level\",\"message\":$(jq -Rn --arg m "$message" '$m')}" >>"$EVENTS_LOG"
+  state_db_insert_event "$ts" "$level" "$message" "$CURRENT_REPO" "$CURRENT_PASS"
 }
 
 update_status() {
@@ -340,6 +599,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
+init_state_db
+
 log_event INFO "Run ID: $RUN_ID"
 log_event INFO "PID: $$"
 log_event INFO "Repos file: $REPOS_FILE"
@@ -397,6 +658,10 @@ log_event INFO "Security scanner script: $SECURITY_SCANNER_SCRIPT"
 log_event INFO "Parallel repos: $PARALLEL_REPOS"
 log_event INFO "Backlog minimum items: $BACKLOG_MIN_ITEMS"
 log_event INFO "UI/UX gate enabled: $UIUX_GATE_ENABLED"
+log_event INFO "State DB enabled: $STATE_DB_ENABLED"
+log_event INFO "State DB file: $STATE_DB_FILE"
+log_event INFO "State DB queue sync enabled: $STATE_DB_QUEUE_SYNC_ENABLED"
+log_event INFO "State DB intent sync enabled: $STATE_DB_INTENT_SYNC_ENABLED"
 log_event INFO "Task queue file: $TASK_QUEUE_FILE"
 log_event INFO "Task queue max items per repo: $TASK_QUEUE_MAX_ITEMS_PER_REPO"
 log_event INFO "Task queue auto create: $TASK_QUEUE_AUTO_CREATE"
@@ -544,6 +809,7 @@ EOF
 
 ensure_task_queue_file() {
   if [[ -f "$TASK_QUEUE_FILE" ]]; then
+    state_db_sync_task_queue_snapshot
     return 0
   fi
   if [[ "$TASK_QUEUE_AUTO_CREATE" != "1" ]]; then
@@ -556,6 +822,7 @@ ensure_task_queue_file() {
   "tasks": []
 }
 EOF
+  state_db_sync_task_queue_snapshot
 }
 
 queue_lines_to_json_array() {
@@ -611,6 +878,7 @@ requeue_stale_claimed_tasks() {
     return 0
   fi
   mv "$tmp" "$TASK_QUEUE_FILE"
+  state_db_sync_task_queue_snapshot
   log_event INFO "TASK_QUEUE stale_claims_requeued=$stale_count file=$TASK_QUEUE_FILE"
 }
 
@@ -681,6 +949,7 @@ claim_queue_tasks_for_repo() {
     return 0
   fi
   mv "$tmp" "$TASK_QUEUE_FILE"
+  state_db_sync_task_queue_snapshot
 
   jq -r '
     .[]
@@ -792,6 +1061,7 @@ finalize_queue_tasks_for_repo() {
     return 0
   fi
   mv "$tmp" "$TASK_QUEUE_FILE"
+  state_db_sync_task_queue_snapshot
   log_event INFO "TASK_QUEUE pass=$pass_label done=$done_count blocked=$blocked_count requeued=$requeue_count"
 }
 
@@ -1260,6 +1530,7 @@ run_security_audit_for_pass() {
   [[ "$total" =~ ^[0-9]+$ ]] || total=0
 
   log_event INFO "SECURITY_AUDIT repo=$repo_name pass=$pass reason=$trigger_reason critical=$critical high=$high medium=$medium total=$total report=$report_file"
+  state_db_insert_security_audit "$repo_name" "$pass" "$trigger_reason" "$critical" "$high" "$medium" "$total" "$report_file"
 
   if (( critical + high > 0 )); then
     fix_log_file="$LOG_DIR/${RUN_ID}-${repo_slug}-${pass}-security-fix.log"
@@ -1342,6 +1613,7 @@ PROMPT
     [[ "$verify_medium" =~ ^[0-9]+$ ]] || verify_medium=0
     [[ "$verify_total" =~ ^[0-9]+$ ]] || verify_total=0
     log_event INFO "SECURITY_AUDIT_VERIFY repo=$repo_name pass=$pass critical=$verify_critical high=$verify_high medium=$verify_medium total=$verify_total report=$report_file"
+    state_db_insert_security_audit "$repo_name" "$pass" "post_fix_verify" "$verify_critical" "$verify_high" "$verify_medium" "$verify_total" "$report_file"
 
     if (( verify_critical + verify_high > 0 )); then
       append_incident_entry \

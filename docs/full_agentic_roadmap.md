@@ -37,6 +37,9 @@ Goal: make Clone a high-agency, continuous full-stack operator for many GitHub r
   - commit/cycle-triggered lightweight security scan
   - report artifact per pass
   - auto-remediation attempt for high/critical findings
+- Optional SQLite durability layer:
+  - persistent run/queue/intent/security snapshots
+  - better crash recovery visibility and queryable audit trail
 
 ## Target Architecture (Next)
 

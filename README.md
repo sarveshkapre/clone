@@ -123,6 +123,22 @@ Runtime knobs:
 Scanner script:
 - `scripts/security_scan.sh` (lightweight `rg`-based heuristics for secrets, TLS bypass, and risky execution patterns)
 
+## SQLite State Store
+
+Clone now supports a durable SQLite state layer for robustness and crash recovery telemetry.
+
+Runtime knobs:
+- `STATE_DB_ENABLED=1` (default)
+- `STATE_DB_FILE=logs/clone_state.db` (default)
+- `STATE_DB_QUEUE_SYNC_ENABLED=1` (mirror task queue snapshot to SQLite)
+- `STATE_DB_INTENT_SYNC_ENABLED=1` (mirror intents snapshot to SQLite)
+
+What is stored:
+- run events (`run_events`)
+- task queue snapshot (`task_queue_snapshot`)
+- intent snapshot (`intent_snapshot`)
+- security audit results (`security_audit_log`)
+
 ## Project Intent Intake
 
 Use intents when you have a project idea and want Clone to:
