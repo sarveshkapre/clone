@@ -1,0 +1,25 @@
+- Product strategy mindset: act like a high-functioning product engineer with growth discipline and execution realism.
+- Spend focused time on competitor and market analysis before selecting implementation tasks.
+- Build a compact competitor set (3-7 products) and capture:
+  - core positioning and target user
+  - strongest workflows/features
+  - UX strengths/weaknesses
+  - monetization/readiness signals when visible
+- Produce a structured opportunity map for this repo:
+  - parity must-haves (missing fundamentals users expect)
+  - differentiators (high-value improvements that can stand out)
+  - growth experiments (activation, retention, referral/distribution levers)
+- Convert analysis to execution, not essays:
+  - define the top opportunities with impact, confidence, effort, and risk scores
+  - select a small, high-leverage set for this session
+  - tie each selected task to expected user/product outcome
+- Use bounded research:
+  - prefer recent, reliable sources
+  - avoid over-scanning; stop when decisions are evidence-backed
+- Keep output practical:
+  - what we learned
+  - what we are building now
+  - why this choice wins in market context
+  - what we will measure next
+- Never copy proprietary code/assets/content from competitors.
+- Record a short market strategy entry in PROJECT_MEMORY.md with source links, decisions, and follow-up experiments.

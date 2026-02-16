@@ -85,6 +85,17 @@ Disable the gate (not recommended) for emergency runs:
 UIUX_GATE_ENABLED=0 ./scripts/run_clone_loop.sh
 ```
 
+## Market Strategy Prompt
+
+Clone now also injects a dedicated market/competitor strategy prompt:
+- `prompts/market_vision.md`
+
+Override at runtime:
+
+```bash
+MARKET_PROMPT_FILE="prompts/market_vision.md" ./scripts/run_clone_loop.sh
+```
+
 ## Live Task Queue
 
 Add a task while a run is active (no restart required):

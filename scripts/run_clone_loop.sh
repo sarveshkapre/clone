@@ -29,6 +29,7 @@ CODE_ROOT="${CODE_ROOT:-$HOME/code}"
 PROMPTS_FILE="${PROMPTS_FILE:-prompts/repo_steering.md}"
 CORE_PROMPT_FILE="${CORE_PROMPT_FILE:-prompts/autonomous_core_prompt.md}"
 UIUX_PROMPT_FILE="${UIUX_PROMPT_FILE:-prompts/uiux_principles.md}"
+MARKET_PROMPT_FILE="${MARKET_PROMPT_FILE:-prompts/market_vision.md}"
 CODEX_SANDBOX_FLAG="${CODEX_SANDBOX_FLAG:-}"
 GH_SIGNALS_ENABLED="${GH_SIGNALS_ENABLED:-0}"
 GH_ISSUES_LIMIT="${GH_ISSUES_LIMIT:-20}"
@@ -640,6 +641,7 @@ log_event INFO "Code root: $CODE_ROOT"
 log_event INFO "Prompts file: $PROMPTS_FILE"
 log_event INFO "Core prompt file: $CORE_PROMPT_FILE"
 log_event INFO "UI/UX prompt file: $UIUX_PROMPT_FILE"
+log_event INFO "Market prompt file: $MARKET_PROMPT_FILE"
 log_event INFO "Model: $MODEL"
 log_event INFO "Codex sandbox flag: $CODEX_SANDBOX_FLAG"
 log_event INFO "GitHub signals enabled: $GH_SIGNALS_ENABLED"
@@ -804,6 +806,24 @@ load_uiux_prompt() {
 - Improve touched screens with small, coherent refinements instead of broad unstable redesigns.
 - Validate responsiveness for desktop and mobile for all changed user-facing views.
 - Keep UX notes in PROJECT_MEMORY.md: what changed, why it is clearer, and how it was verified.
+EOF
+}
+
+load_market_prompt() {
+  if [[ -f "$MARKET_PROMPT_FILE" ]]; then
+    cat "$MARKET_PROMPT_FILE"
+    return 0
+  fi
+
+  cat <<'EOF'
+- Spend dedicated time each session on bounded competitor and market analysis before implementation.
+- Identify 3-7 closest alternatives and summarize what they do better, worse, and differently.
+- Extract concrete feature opportunities from competitor strengths and user pain from their weaknesses.
+- Produce a compact feature strategy: parity table (must-have), differentiators (should-have), and experiments (could-have).
+- Use a product + growth lens: activation, retention, monetization/readiness, and distribution loops.
+- Prioritize initiatives by impact, confidence, effort, and strategic fit.
+- Avoid copying proprietary implementations; adapt product patterns and workflows only.
+- Record a brief strategy note in PROJECT_MEMORY.md with sources, decisions, and next experiments.
 EOF
 }
 
@@ -2058,7 +2078,7 @@ run_repo() {
 
   local name path branch objective current_branch last_message_file tracker_file pass_log_file repo_slug
   local before_head after_head
-  local prompt steering_guidance core_guidance uiux_guidance viewer_login issue_context ci_context
+  local prompt steering_guidance core_guidance uiux_guidance market_guidance viewer_login issue_context ci_context
   local pass_label lock_key lock_dir
   local new_commit_count cleanup_label cleanup_last_message_file cleanup_log_file cleanup_prompt
   local lock_pid repo_tasks_per_repo repo_tasks_raw max_cycles_per_repo max_commits_per_repo
@@ -2137,6 +2157,7 @@ run_repo() {
   steering_guidance="$(load_steering_prompt)"
   core_guidance="$(load_core_prompt)"
   uiux_guidance="$(load_uiux_prompt)"
+  market_guidance="$(load_market_prompt)"
   viewer_login=""
   issue_context="- GitHub issue signals disabled or unavailable."
   ci_context="- GitHub CI signals disabled or unavailable."
@@ -2342,6 +2363,9 @@ Rules:
 
 UI/UX playbook for this repository:
 $uiux_guidance
+
+Market and competitor strategy playbook:
+$market_guidance
 
 Steering prompts for this repository:
 $steering_guidance
