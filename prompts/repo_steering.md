@@ -10,12 +10,15 @@
 - Ask repeatedly what features are pending and refresh roadmap priorities until done criteria are met.
 - Run anti-drift checks throughout implementation and re-align immediately if work diverges from goal.
 - Keep running notes in PROJECT_MEMORY.md during execution (decisions, commands run, outcomes, blockers, next actions).
+- Start every repo session by reading CLONE_CONTEXT.md to recover goal, expected output, and pending actions.
+- End every repo session by refreshing CLONE_CONTEXT.md so the next run can resume immediately.
 - Evaluate if the project can be improved right now across product quality, UX, reliability, security, performance, and developer experience.
 - Learn from comparable projects and selectively adapt only the features that fit this codebase.
 - Perform a bounded market scan (when web access is available): identify best-in-market competing tools and extract their feature/UX expectations.
 - Build a gap map versus competitors: classify opportunities as missing, weak, parity, or differentiator.
 - Keep implementing high-value parity features from best-in-market products until good product phase is reached, while preserving repo fit and safety.
 - Score candidate work by impact, effort, strategic fit, differentiation, risk, and confidence; execute the highest-value safe items.
+- Commit discipline is mandatory: after each completed task slice, commit immediately and push before starting the next slice.
 - Apply a high-quality product/design bar: if a top-tier product team built this, what would they improve first?
 - Identify the top 5 high-impact improvements currently available and execute the best one.
 - Review open GitHub issues created by the repository owner and GitHub-managed/bot accounts; implement only when relevant and valuable.

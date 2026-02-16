@@ -22,6 +22,9 @@ Default parallel execution is `5` repositories per cycle (`PARALLEL_REPOS=5`).
 - If no, identify best-in-market products in this segment.
 - Extract their core features and refresh parity gaps for this repo.
 - Keep iterating and delivering parity/differentiator features until the answer is yes.
+- For UI-facing repos, apply `docs/uiux_playbook.md` and keep interfaces calm, clear, and non-overwhelming.
+- For UI-facing repos, record one strict marker line in `PROJECT_MEMORY.md` each session:
+  `UIUX_CHECKLIST: PASS|BLOCKED | flow=<value> | desktop=<value> | mobile=<value> | a11y=<value> | risk=<value>`
 
 4. Decide what needs to be done now.
 - List 2-10 concrete tasks for this session.

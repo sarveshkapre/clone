@@ -1,0 +1,685 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clone</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="bg-noise" aria-hidden="true"></div>
+    <main class="shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Clone</p>
+          <h1>Clone</h1>
+          <p id="generatedAt" class="meta">Loading live telemetry...</p>
+        </div>
+        <div class="hero-side">
+          <div class="hero-quick-controls">
+            <button id="heroCompactModeBtn" type="button">Compact Mode</button>
+            <button id="heroDensityModeBtn" type="button">Density: Calm</button>
+            <button id="heroCommandBtn" type="button">Command</button>
+            <button id="heroShortcutsBtn" type="button">Shortcuts</button>
+          </div>
+          <div class="hero-status" id="reactorBadge">BOOTING</div>
+        </div>
+      </header>
+
+      <section class="metrics" id="metricCards" data-routes="overview runs repos alerts controls"></section>
+
+      <section id="viewNavSection" class="panel view-nav-panel" data-collapsible="false" data-routes="overview runs repos alerts controls">
+        <div id="routeNav" class="route-nav" aria-label="Primary views">
+          <button type="button" data-route="overview">Overview</button>
+          <button type="button" data-route="runs">Runs</button>
+          <button type="button" data-route="repos">Repos</button>
+          <button type="button" data-route="alerts">Alerts</button>
+          <button type="button" data-route="controls">Controls</button>
+          <button type="button" data-route="launch">Launch</button>
+        </div>
+      </section>
+
+      <section id="commandDeckSection" class="panel command-deck-panel" data-collapsible="false" data-routes="overview runs repos alerts controls">
+        <div class="panel-head">
+          <h2>Command Deck</h2>
+          <span class="meta" id="deckMeta">Synthesizing run posture...</span>
+        </div>
+        <div class="command-deck-grid">
+          <article id="deckActionCard" class="deck-card">
+            <p class="deck-label">Next Action</p>
+            <p id="deckActionValue" class="deck-value">-</p>
+            <p id="deckActionMeta" class="meta">-</p>
+          </article>
+          <article id="deckFlowCard" class="deck-card">
+            <p class="deck-label">Flow</p>
+            <p id="deckFlowValue" class="deck-value">-</p>
+            <p id="deckFlowMeta" class="meta">-</p>
+            <div id="deckFlowTrend" class="deck-trend" aria-hidden="true"></div>
+          </article>
+          <article id="deckIssueCard" class="deck-card">
+            <p class="deck-label">Issues</p>
+            <p id="deckIssueValue" class="deck-value">-</p>
+            <p id="deckIssueMeta" class="meta">-</p>
+            <div id="deckIssueTrend" class="deck-trend" aria-hidden="true"></div>
+          </article>
+          <article id="deckNowCard" class="deck-card">
+            <p class="deck-label">Now</p>
+            <p id="deckNowValue" class="deck-value">-</p>
+            <p id="deckNowMeta" class="meta">-</p>
+          </article>
+        </div>
+        <div class="panel-head subhead">
+          <div class="inline-controls">
+            <button id="deckOpenAlertsBtn" type="button">Open Alerts</button>
+          </div>
+          <span id="deckAlertSummary" class="meta">No active alerts.</span>
+        </div>
+        <div id="deckAlertStack" class="deck-alert-stack"></div>
+      </section>
+
+      <section id="liveToolbarSection" class="panel live-toolbar-panel" data-collapsible="false" data-routes="overview runs repos alerts controls">
+        <div class="live-toolbar">
+          <div class="live-status-wrap">
+            <span id="streamStatePill" class="stream-pill connecting">Connecting</span>
+            <span id="streamMeta" class="meta">Waiting for first stream frame...</span>
+          </div>
+          <div class="inline-controls">
+            <label for="timeMode">Time</label>
+            <select id="timeMode">
+              <option value="utc" selected>UTC</option>
+              <option value="local">Local</option>
+            </select>
+            <button id="pauseStreamBtn" type="button">Pause Live</button>
+            <button id="refreshNowBtn" type="button">Refresh Now</button>
+            <button id="collapseAllBtn" type="button">Collapse All</button>
+            <button id="compactModeBtn" type="button" class="hidden">Compact Mode</button>
+            <button id="densityModeBtn" type="button" class="hidden">Density: Calm</button>
+            <button id="commandPaletteBtn" type="button" class="hidden">Command</button>
+            <button id="shortcutsBtn" type="button" class="hidden">Shortcuts</button>
+          </div>
+        </div>
+        <div id="jumpNav" class="jump-nav" aria-label="Section navigation">
+          <button type="button" data-target="actionCenterSection">Triage</button>
+          <button type="button" data-target="alertsSection">Alerts</button>
+          <button type="button" data-target="controlsSection">Controls</button>
+          <button type="button" data-target="notificationsSection">Notifications</button>
+          <button type="button" data-target="runHistorySection">Run History</button>
+          <button type="button" data-target="repoInsightsSection">Repo Insights</button>
+          <button type="button" data-target="repoDrilldownSection">Drilldown</button>
+        </div>
+        <div id="shortcutsPanel" class="shortcuts-panel hidden" aria-hidden="true">
+          <p class="shortcuts-title">Keyboard Shortcuts</p>
+          <div class="shortcuts-grid">
+            <p><kbd>Cmd/Ctrl</kbd>+<kbd>K</kbd> open command palette</p>
+            <p><kbd>g</kbd> open jump navigator</p>
+            <p><kbd>/</kbd> focus run history search</p>
+            <p><kbd>Space</kbd> pause/resume live stream</p>
+            <p><kbd>r</kbd> refresh now</p>
+            <p><kbd>o</kbd> jump to run triage</p>
+            <p><kbd>n</kbd> run next agent step</p>
+            <p><kbd>p</kbd> toggle agent autopilot</p>
+            <p><kbd>i</kbd> open/close inspector</p>
+            <p><kbd>t</kbd> toggle UTC/local time mode</p>
+            <p><kbd>a</kbd> toggle events auto-scroll</p>
+            <p><kbd>c</kbd> toggle compact mode</p>
+            <p><kbd>?</kbd> open/close this help</p>
+            <p><kbd>Esc</kbd> close shortcuts panel</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="actionCenterSection" class="layout-row" data-routes="overview alerts controls">
+        <article id="runTriagePanel" class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Run Triage</h2>
+            <span class="meta" id="opsMeta">Deriving operational signals...</span>
+          </div>
+          <div class="ops-grid">
+            <div class="ops-score-card">
+              <p class="metric-label">Health Score</p>
+              <p id="opsHealthScore" class="ops-score">-</p>
+              <p id="opsHealthSummary" class="meta">Loading...</p>
+            </div>
+            <div class="ops-recs">
+              <p class="ops-title">Recommendations</p>
+              <div id="opsRecommendations" class="ops-list"></div>
+            </div>
+            <div class="ops-actions">
+              <p class="ops-title">Quick Actions</p>
+              <div class="inline-controls">
+                <button id="opsNormalizeBtn" type="button">Normalize Loops</button>
+                <button id="opsRestartBtn" type="button">Restart Run</button>
+                <button id="opsInspectRunBtn" type="button">Inspect Latest Run</button>
+              </div>
+              <div class="agent-pilot">
+                <div class="agent-pilot-head">
+                  <p class="ops-title">Agent Pilot</p>
+                  <button id="agentPilotToggleBtn" type="button">Show</button>
+                </div>
+                <div id="agentPilotBody" class="agent-pilot-body hidden">
+                  <div class="inline-controls">
+                    <label for="agentMode">Mode</label>
+                    <select id="agentMode">
+                      <option value="safe" selected>Safe</option>
+                      <option value="assertive">Assertive</option>
+                    </select>
+                    <label for="agentInterval">Interval</label>
+                    <select id="agentInterval">
+                      <option value="30">30s</option>
+                      <option value="60" selected>60s</option>
+                      <option value="120">120s</option>
+                      <option value="180">180s</option>
+                    </select>
+                    <label for="agentAutopilotEnabled">Autopilot</label>
+                    <input id="agentAutopilotEnabled" type="checkbox" />
+                    <button id="agentRunNextBtn" type="button">Run Next Step</button>
+                    <button id="agentRunPlanBtn" type="button">Run Full Plan</button>
+                  </div>
+                  <p id="agentStatusMeta" class="meta">Agent pilot idle.</p>
+                  <div id="agentPlanList" class="agent-plan-list"></div>
+                  <div id="agentEventLog" class="agent-event-log"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Lock Hotspots</h2>
+            <span class="meta" id="lockHotspotsMeta"></span>
+          </div>
+          <div id="lockHotspotsList" class="hotspot-list"></div>
+        </article>
+      </section>
+
+      <section id="alertsSection" class="panel alerts-panel" data-routes="overview alerts">
+        <div class="panel-head">
+          <h2>Alerts</h2>
+          <span class="meta" id="alertsMeta"></span>
+        </div>
+        <div id="alertsList" class="alerts-list"></div>
+      </section>
+
+      <section id="controlsSection" class="panel" data-routes="overview controls">
+        <div class="panel-head">
+          <h2>Run Controls</h2>
+          <span class="meta" id="controlStatusMeta">Initializing control plane...</span>
+        </div>
+          <div class="control-grid">
+            <div class="inline-controls legacy-run-inputs">
+              <label for="controlParallelRepos">Parallel</label>
+              <input id="controlParallelRepos" type="number" min="1" max="64" value="5" />
+              <label for="controlMaxCycles">Max Cycles</label>
+              <input id="controlMaxCycles" type="number" min="1" max="10000" value="30" />
+              <label for="controlTasksPerRepo">Tasks/Repo</label>
+              <input id="controlTasksPerRepo" type="number" min="0" max="1000" value="0" />
+            </div>
+            <div class="inline-controls">
+              <button id="controlStartBtn" type="button">Configure Next Run</button>
+              <button id="controlStopBtn" type="button">Stop</button>
+              <button id="controlRestartBtn" type="button">Restart</button>
+              <button id="controlNormalizeBtn" type="button">Normalize Loops</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="notificationsSection" class="panel notifications-panel" data-routes="controls">
+        <div class="panel-head">
+          <h2>Notifications</h2>
+          <span class="meta" id="notifyStatusMeta">Loading notification settings...</span>
+        </div>
+        <div class="notify-grid">
+          <div class="inline-controls">
+            <label for="notifyEnabled">Enabled</label>
+            <input id="notifyEnabled" type="checkbox" />
+            <label for="notifyWebhookUrl">Webhook URL</label>
+            <input id="notifyWebhookUrl" type="password" placeholder="https://..." />
+            <label for="notifyMinSeverity">Min Severity</label>
+            <select id="notifyMinSeverity">
+              <option value="ok">ok</option>
+              <option value="info">info</option>
+              <option value="warn" selected>warn</option>
+              <option value="critical">critical</option>
+            </select>
+            <label for="notifyCooldownSeconds">Cooldown</label>
+            <input id="notifyCooldownSeconds" type="number" min="30" max="86400" value="600" />
+            <label for="notifySendOk">Send ok</label>
+            <input id="notifySendOk" type="checkbox" />
+          </div>
+          <div id="notifyRules" class="notify-rules"></div>
+          <div class="inline-controls">
+            <button id="notifySaveBtn" type="button">Save</button>
+            <button id="notifyTestBtn" type="button">Send Test</button>
+          </div>
+        </div>
+        <div class="panel-head subhead">
+          <span class="meta" id="notifyDeliveryMeta">No delivery activity yet.</span>
+        </div>
+        <div class="table-wrap notify-events-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Severity</th>
+                <th>Reason</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody id="notifyEventsTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="taskQueueSection" class="panel" data-routes="controls">
+        <div class="panel-head">
+          <h2>Task Queue</h2>
+          <span class="meta" id="taskQueueMeta">Loading queue...</span>
+        </div>
+        <div class="task-queue-grid">
+          <div class="inline-controls">
+            <label for="taskQueueRepo">Repo</label>
+            <input id="taskQueueRepo" type="text" placeholder="repo name or *" value="*" />
+            <label for="taskQueuePriority">Priority</label>
+            <select id="taskQueuePriority">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+            <label for="taskQueueStatus">Status</label>
+            <select id="taskQueueStatus">
+              <option value="" selected>All</option>
+              <option value="QUEUED">Queued</option>
+              <option value="CLAIMED">Claimed</option>
+              <option value="DONE">Done</option>
+              <option value="BLOCKED">Blocked</option>
+              <option value="CANCELED">Canceled</option>
+            </select>
+          </div>
+          <div class="inline-controls task-queue-compose">
+            <label for="taskQueueTitle">Task</label>
+            <input id="taskQueueTitle" type="text" placeholder="For project xyz: add ..." />
+            <label for="taskQueueDetails">Details</label>
+            <input id="taskQueueDetails" type="text" placeholder="Optional context / constraints" />
+            <button id="taskQueueAddBtn" type="button">Add To Queue</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Priority</th>
+                <th>Repo</th>
+                <th>Task</th>
+                <th>Updated</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="taskQueueTable"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="commitStreamSection" class="layout-row" data-routes="runs repos">
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Live Commit Stream</h2>
+            <div class="inline-controls">
+              <label for="commitHours">Window</label>
+              <select id="commitHours">
+                <option value="1">1h</option>
+                <option value="2" selected>2h</option>
+                <option value="4">4h</option>
+                <option value="8">8h</option>
+                <option value="24">24h</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Repo</th>
+                  <th>Hash</th>
+                  <th>Subject</th>
+                </tr>
+              </thead>
+              <tbody id="commitTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Repo States</h2>
+            <span class="meta" id="repoStateMeta"></span>
+          </div>
+          <div id="repoStates" class="repo-states"></div>
+        </article>
+      </section>
+
+      <section id="eventsSection" class="layout-row" data-routes="runs alerts">
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Structured Events</h2>
+            <div class="inline-controls">
+              <button id="eventsAutoScrollBtn" type="button">Auto-scroll On</button>
+              <span class="meta">selected run events tail</span>
+            </div>
+          </div>
+          <div id="eventsPane" class="terminal-pane"></div>
+        </article>
+      </section>
+
+      <section id="runLogSection" class="panel" data-routes="runs">
+        <div class="panel-head">
+          <h2>Run Log</h2>
+          <div class="inline-controls">
+            <button id="runLogRefreshBtn" type="button">Refresh</button>
+            <button id="runLogAutoScrollBtn" type="button">Auto-scroll On</button>
+            <span id="runLogMeta" class="meta">No run selected.</span>
+          </div>
+        </div>
+        <div id="runLogPane" class="terminal-pane"></div>
+      </section>
+
+      <section id="runActivitySection" class="panel" data-routes="runs">
+        <div class="panel-head">
+          <h2>Run Activity Stream</h2>
+          <div class="inline-controls">
+            <button id="runActivityRefreshBtn" type="button">Refresh</button>
+            <button id="runActivityAutoScrollBtn" type="button">Auto-scroll On</button>
+            <span id="runActivityMeta" class="meta">No run selected.</span>
+          </div>
+        </div>
+        <div id="runActivityPane" class="terminal-pane"></div>
+      </section>
+
+      <section id="runWorkspaceSection" class="layout-row" data-routes="runs">
+        <article id="runHistorySection" class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Run History (click to inspect)</h2>
+          </div>
+          <div class="panel-head subhead">
+            <div class="inline-controls inspector-controls">
+              <label for="runHistorySearch">Search</label>
+              <input id="runHistorySearch" type="search" placeholder="run id or state" />
+              <label for="runHistoryStateFilter">State</label>
+              <select id="runHistoryStateFilter">
+                <option value="all" selected>All</option>
+                <option value="running">Running</option>
+                <option value="finished">Finished</option>
+              </select>
+            </div>
+            <div id="runDetailNav" class="detail-route-nav" aria-label="Run detail views">
+              <button id="runDetailSummaryBtn" type="button" data-run-view="summary">Summary</button>
+              <button id="runDetailCommitsBtn" type="button" data-run-view="commits">Commits</button>
+              <button id="runDetailLogsBtn" type="button" data-run-view="logs">Logs</button>
+              <button id="runDetailEventsBtn" type="button" data-run-view="events">Events</button>
+              <button id="runDetailReposBtn" type="button" data-run-view="repos">Repos</button>
+            </div>
+            <span class="meta" id="runHistoryMeta"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run ID</th>
+                  <th>Start</th>
+                  <th>State</th>
+                  <th>Duration</th>
+                  <th>Cycle</th>
+                  <th>Started</th>
+                  <th>Ended</th>
+                  <th>No Change</th>
+                  <th>Skip Lock</th>
+                  <th>Link</th>
+                </tr>
+              </thead>
+              <tbody id="runTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Run Commits</h2>
+            <span class="meta" id="selectedRunMeta"></span>
+          </div>
+          <div class="panel-head subhead">
+            <div class="inline-controls inspector-controls">
+              <label for="runCommitRepoFilter">Repo</label>
+              <select id="runCommitRepoFilter">
+                <option value="">All</option>
+              </select>
+              <label for="runCommitSearch">Search</label>
+              <input id="runCommitSearch" type="search" placeholder="hash or subject" />
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Repo</th>
+                  <th>Hash</th>
+                  <th>Subject</th>
+                </tr>
+              </thead>
+              <tbody id="runCommitTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="repoWorkspaceSection" class="layout-row" data-routes="repos">
+        <article id="repoInsightsSection" class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Repo Insights (click to inspect)</h2>
+            <div class="inline-controls">
+              <label for="repoInsightsHours">Window</label>
+              <select id="repoInsightsHours">
+                <option value="6">6h</option>
+                <option value="12">12h</option>
+                <option value="24" selected>24h</option>
+                <option value="48">48h</option>
+              </select>
+              <button id="repoInsightsRefreshBtn" type="button">Refresh</button>
+            </div>
+          </div>
+          <div class="panel-head subhead">
+            <div class="inline-controls inspector-controls">
+              <label for="repoInsightsSearch">Search</label>
+              <input id="repoInsightsSearch" type="search" placeholder="repo or state" />
+              <label for="repoInsightsStateFilter">Focus</label>
+              <select id="repoInsightsStateFilter">
+                <option value="all" selected>All</option>
+                <option value="active">Active (commits > 0)</option>
+                <option value="changed">Changed runs</option>
+                <option value="no_change">No-change runs</option>
+                <option value="lock_skip">Lock-skip runs</option>
+              </select>
+            </div>
+            <div id="repoDetailNav" class="detail-route-nav" aria-label="Repo detail views">
+              <button id="repoDetailSummaryBtn" type="button" data-repo-view="summary">Summary</button>
+              <button id="repoDetailCommitsBtn" type="button" data-repo-view="commits">Commits</button>
+              <button id="repoDetailTimelineBtn" type="button" data-repo-view="timeline">Timeline</button>
+            </div>
+            <span class="meta" id="repoInsightsMeta"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Repo</th>
+                  <th>Commits</th>
+                  <th>Last Commit</th>
+                  <th>Latest State</th>
+                  <th>Seen Runs</th>
+                  <th>Changed</th>
+                  <th>No Change</th>
+                  <th>Lock Skip</th>
+                  <th>Link</th>
+                </tr>
+              </thead>
+              <tbody id="repoInsightsTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section id="repoDrilldownSection" class="layout-row" data-routes="repos">
+        <article class="panel panel-wide">
+          <div class="panel-head">
+            <h2>Repo Drilldown Commits</h2>
+            <span class="meta" id="repoDetailsMeta">Select a repo from insights table.</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Hash</th>
+                  <th>Subject</th>
+                </tr>
+              </thead>
+              <tbody id="repoDetailsCommitsTable"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h2>Repo Run Timeline</h2>
+            <span class="meta" id="repoTimelineMeta"></span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Run</th>
+                  <th>State</th>
+                  <th>Start</th>
+                </tr>
+              </thead>
+              <tbody id="repoTimelineTable"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <div id="toastStack" class="toast-stack" aria-live="polite"></div>
+    <div id="inspectorDrawer" class="inspector-drawer hidden" aria-hidden="true">
+      <aside class="inspector-shell" role="dialog" aria-modal="false" aria-label="Inspector Drawer">
+        <header class="inspector-head">
+          <div>
+            <p class="eyebrow">Inspector</p>
+            <h2 id="inspectorTitle">Run & Repo Inspector</h2>
+            <p id="inspectorMeta" class="meta">Select a run or repo to inspect.</p>
+          </div>
+          <button id="inspectorCloseBtn" type="button">Close</button>
+        </header>
+        <div class="inspector-tabs">
+          <button type="button" data-tab="summary" class="active">Summary</button>
+          <button type="button" data-tab="commits">Commits</button>
+          <button type="button" data-tab="events">Events</button>
+          <button type="button" data-tab="repos">Repos</button>
+        </div>
+        <div id="inspectorBody" class="inspector-body"></div>
+      </aside>
+    </div>
+    <div id="commandPaletteOverlay" class="command-palette-overlay hidden" aria-hidden="true">
+      <div class="command-palette" role="dialog" aria-modal="true" aria-label="Command palette">
+        <div class="command-palette-head">
+          <input id="commandPaletteInput" type="search" placeholder="Type a command or action..." />
+          <span id="commandPaletteMeta" class="meta"></span>
+        </div>
+        <div id="commandPaletteList" class="command-palette-list"></div>
+      </div>
+    </div>
+    <div id="startRunModal" class="modal-overlay hidden" aria-hidden="true">
+      <div class="modal-shell" role="dialog" aria-modal="true" aria-label="Start next run">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">Run Launcher</p>
+            <h2>Start Next Run</h2>
+            <p class="meta">Pick repositories and task targets, then launch.</p>
+          </div>
+          <button id="startRunCloseBtn" type="button">Close</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-settings-grid">
+            <div class="inline-controls">
+              <label for="startRunParallelRepos">Parallel</label>
+              <input id="startRunParallelRepos" type="number" min="1" max="64" value="5" />
+            </div>
+            <div class="inline-controls">
+              <label for="startRunMaxCycles">Max Cycles</label>
+              <input id="startRunMaxCycles" type="number" min="1" max="10000" value="30" />
+            </div>
+            <div class="inline-controls">
+              <label for="startRunTasksPerRepo">Default Tasks/Repo</label>
+              <input id="startRunTasksPerRepo" type="number" min="0" max="1000" value="0" />
+            </div>
+            <div class="inline-controls">
+              <label for="startRunMaxCyclesPerRepo">Default Max Cycles/Repo</label>
+              <input id="startRunMaxCyclesPerRepo" type="number" min="0" max="10000" value="0" />
+            </div>
+            <div class="inline-controls">
+              <label for="startRunMaxCommitsPerRepo">Default Max Commits/Repo</label>
+              <input id="startRunMaxCommitsPerRepo" type="number" min="0" max="10000" value="0" />
+            </div>
+          </div>
+          <div class="panel-head subhead modal-subhead">
+            <div class="inline-controls">
+              <label><input id="startRunModeAuto" type="radio" name="startRunMode" value="auto" checked /> Auto (all repos)</label>
+              <label><input id="startRunModeCustom" type="radio" name="startRunMode" value="custom" /> Custom select</label>
+            </div>
+            <span class="meta" id="startRunRepoCountMeta"></span>
+          </div>
+          <div class="panel-head subhead modal-subhead">
+            <div class="inline-controls">
+              <label for="startRunSearch">Search</label>
+              <input id="startRunSearch" type="search" placeholder="repo or path" />
+              <button id="startRunSelectAllBtn" type="button">Select All</button>
+              <button id="startRunSelectNoneBtn" type="button">Select None</button>
+            </div>
+          </div>
+          <div class="table-wrap modal-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Use</th>
+                  <th>Repo</th>
+                  <th>Branch</th>
+                  <th>Tasks/Repo</th>
+                  <th>Max Cycles</th>
+                  <th>Max Commits</th>
+                </tr>
+              </thead>
+              <tbody id="startRunRepoTable"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button id="startRunCancelBtn" type="button">Cancel</button>
+          <button id="startRunConfirmBtn" type="button">Start Run</button>
+        </div>
+      </div>
+    </div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
