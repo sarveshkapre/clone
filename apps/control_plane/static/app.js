@@ -87,6 +87,7 @@ const elements = {
   startRunSelectNoneBtn: document.getElementById("startRunSelectNoneBtn"),
   startRunRepoTable: document.getElementById("startRunRepoTable"),
   startRunCodeRoot: document.getElementById("startRunCodeRoot"),
+  startRunLocalRefreshBtn: document.getElementById("startRunLocalRefreshBtn"),
   startRunGithubRefreshBtn: document.getElementById("startRunGithubRefreshBtn"),
   startRunGithubImportBtn: document.getElementById("startRunGithubImportBtn"),
   startRunGithubMeta: document.getElementById("startRunGithubMeta"),
@@ -177,6 +178,7 @@ const REPO_INSIGHTS_REFRESH_MS = 45000;
 const NOTIFY_EVENTS_REFRESH_MS = 30000;
 const TASK_QUEUE_REFRESH_MS = 12000;
 const REPOS_CATALOG_REFRESH_MS = 120000;
+const LOCAL_REPOS_REFRESH_MS = 120000;
 const GITHUB_REPOS_REFRESH_MS = 180000;
 const RUN_LOG_REFRESH_MS = 8000;
 const ACTIVE_RUN_LOG_REFRESH_MS = 5000;
@@ -335,6 +337,10 @@ const state = {
   seenToastAlerts: new Set(),
   inspectorOpen: false,
   inspectorTab: "summary",
+  managedRepoCatalog: [],
+  managedRepoCatalogUpdatedAt: 0,
+  localRepoCatalog: [],
+  localRepoCatalogUpdatedAt: 0,
   repoCatalog: [],
   repoCatalogUpdatedAt: 0,
   startRunModalOpen: false,
@@ -4162,6 +4168,8 @@ function normalizeRepoCatalog(records) {
     const maxCycles = clampInt(item.max_cycles_per_run, -1, -1, 10000);
     const maxCommits = clampInt(item.max_commits_per_run, -1, -1, 10000);
     const entry = { name, path, branch, objective };
+    if (item.in_catalog !== undefined) entry.in_catalog = Boolean(item.in_catalog);
+    if (item.source !== undefined) entry.source = String(item.source || "");
     if (tasks >= 0) entry.tasks_per_repo = tasks;
     if (maxCycles >= 0) entry.max_cycles_per_run = maxCycles;
     if (maxCommits >= 0) entry.max_commits_per_run = maxCommits;
@@ -4169,6 +4177,54 @@ function normalizeRepoCatalog(records) {
   });
   normalized.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
   return normalized;
+}
+
+function normalizeLocalRepoCatalog(records) {
+  return normalizeRepoCatalog(records || []).map((item) => ({
+    ...item,
+    in_catalog: Boolean(item.in_catalog),
+    source: "local_scan",
+  }));
+}
+
+function mergeRepoCatalogs(managedRepos, localRepos) {
+  const merged = new Map();
+  (localRepos || []).forEach((repo) => {
+    const key = repoCatalogKey(repo);
+    if (!key) return;
+    merged.set(key, {
+      ...repo,
+      source: "local_scan",
+      in_catalog: Boolean(repo.in_catalog),
+    });
+  });
+  (managedRepos || []).forEach((repo) => {
+    const key = repoCatalogKey(repo);
+    if (!key) return;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, {
+        ...repo,
+        source: "managed",
+        in_catalog: true,
+      });
+      return;
+    }
+    merged.set(key, {
+      ...existing,
+      ...repo,
+      source: "managed",
+      in_catalog: true,
+    });
+  });
+  return [...merged.values()].sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+}
+
+function rebuildStartRunCatalogFromSources() {
+  state.repoCatalog = mergeRepoCatalogs(state.managedRepoCatalog || [], state.localRepoCatalog || []);
+  state.repoCatalogUpdatedAt = Date.now();
+  ensureStartRunSelectionInitialized(false);
+  return state.repoCatalog;
 }
 
 function githubRepoKey(repo) {
@@ -4242,6 +4298,7 @@ function selectedGithubReposFromModal() {
 function setStartRunGithubBusy(busy) {
   state.githubBusy = Boolean(busy);
   const disabled = state.githubBusy || state.startRunBusy;
+  elements.startRunLocalRefreshBtn.disabled = disabled;
   elements.startRunGithubRefreshBtn.disabled = disabled;
   elements.startRunGithubImportBtn.disabled = disabled;
   elements.startRunGithubSelectAllBtn.disabled = disabled;
@@ -4471,15 +4528,14 @@ async function importSelectedGithubRepos() {
       });
     }
     if (Array.isArray(payload.repos)) {
-      state.repoCatalog = normalizeRepoCatalog(payload.repos);
-      state.repoCatalogUpdatedAt = Date.now();
-      ensureStartRunSelectionInitialized(false);
-      renderStartRunRepoTable();
+      state.managedRepoCatalog = normalizeRepoCatalog(payload.repos).map((item) => ({ ...item, in_catalog: true, source: "managed" }));
+      state.managedRepoCatalogUpdatedAt = Date.now();
     } else {
       await loadReposCatalog(true);
-      ensureStartRunSelectionInitialized(false);
-      renderStartRunRepoTable();
     }
+    await loadLocalRepos(true);
+    rebuildStartRunCatalogFromSources();
+    renderStartRunRepoTable();
     await loadGithubRepos(true);
     renderStartRunGithubRepoTable();
   } catch (error) {
@@ -4580,6 +4636,7 @@ function setStartRunModalBusy(busy) {
   elements.startRunCloseBtn.disabled = state.startRunBusy;
   elements.startRunCancelBtn.disabled = state.startRunBusy;
   const disabled = state.startRunBusy || state.githubBusy;
+  elements.startRunLocalRefreshBtn.disabled = disabled;
   elements.startRunGithubRefreshBtn.disabled = disabled;
   elements.startRunGithubImportBtn.disabled = disabled;
   elements.startRunGithubSelectAllBtn.disabled = disabled;
@@ -4756,7 +4813,9 @@ function renderStartRunRepoTable() {
 }
 
 async function loadReposCatalog(force = false) {
-  if (!force && Date.now() - state.repoCatalogUpdatedAt < REPOS_CATALOG_REFRESH_MS && state.repoCatalog.length) return state.repoCatalog;
+  if (!force && Date.now() - state.managedRepoCatalogUpdatedAt < REPOS_CATALOG_REFRESH_MS && state.managedRepoCatalog.length) {
+    return state.managedRepoCatalog;
+  }
   const candidates = [
     "/api/repos_catalog",
     "/api/repos-catalog",
@@ -4787,10 +4846,36 @@ async function loadReposCatalog(force = false) {
     throw new Error(lastError);
   }
   const reposPayload = Array.isArray(payload) ? payload : payload.repos || [];
-  state.repoCatalog = normalizeRepoCatalog(reposPayload);
-  state.repoCatalogUpdatedAt = Date.now();
-  ensureStartRunSelectionInitialized(false);
-  return state.repoCatalog;
+  state.managedRepoCatalog = normalizeRepoCatalog(reposPayload).map((item) => ({ ...item, in_catalog: true, source: "managed" }));
+  state.managedRepoCatalogUpdatedAt = Date.now();
+  return state.managedRepoCatalog;
+}
+
+async function loadLocalRepos(force = false) {
+  if (!force && Date.now() - state.localRepoCatalogUpdatedAt < LOCAL_REPOS_REFRESH_MS && state.localRepoCatalog.length) {
+    return state.localRepoCatalog;
+  }
+  const query = new URLSearchParams({
+    max_depth: "8",
+    limit: "10000",
+  });
+  const codeRoot = String(elements.startRunCodeRoot.value || "").trim();
+  if (codeRoot) query.set("code_root", codeRoot);
+  const response = await fetch(`/api/local_repos?${query.toString()}`);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(String(payload.error || `local repos failed with status ${response.status}`));
+  }
+  const payload = await response.json();
+  if (!payload.ok) {
+    throw new Error(String(payload.error || "failed to load local repositories"));
+  }
+  if (payload.code_root) {
+    elements.startRunCodeRoot.value = String(payload.code_root);
+  }
+  state.localRepoCatalog = normalizeLocalRepoCatalog(payload.repos || []);
+  state.localRepoCatalogUpdatedAt = Date.now();
+  return state.localRepoCatalog;
 }
 
 async function openStartRunModal(action = "start") {
@@ -4831,18 +4916,13 @@ async function openStartRunModal(action = "start") {
     elements.startRunGithubRepoTable.appendChild(row);
   }
   elements.startRunGithubMeta.textContent = "Checking GitHub integration...";
-  let localCatalogReady = false;
+  let launcherCatalogReady = false;
   try {
     await loadReposCatalog(true);
-    ensureStartRunSelectionInitialized(false);
-    renderStartRunRepoTable();
-    localCatalogReady = true;
+    launcherCatalogReady = true;
   } catch (error) {
-    const canUseCachedCatalog = Array.isArray(state.repoCatalog) && state.repoCatalog.length > 0;
+    const canUseCachedCatalog = Array.isArray(state.managedRepoCatalog) && state.managedRepoCatalog.length > 0;
     if (canUseCachedCatalog) {
-      ensureStartRunSelectionInitialized(false);
-      renderStartRunRepoTable();
-      elements.startRunRepoCountMeta.textContent = "Catalog refresh failed; showing cached repositories.";
       toastAlert({
         id: "start_run_catalog_stale",
         run_id: "",
@@ -4850,17 +4930,8 @@ async function openStartRunModal(action = "start") {
         title: "Using cached repo catalog",
         detail: String(error),
       });
-      localCatalogReady = true;
+      launcherCatalogReady = true;
     } else {
-      clearNode(elements.startRunRepoTable);
-      const row = document.createElement("tr");
-      const cell = document.createElement("td");
-      cell.colSpan = 6;
-      cell.className = "muted";
-      cell.textContent = `Failed to load repositories: ${String(error)}`;
-      row.appendChild(cell);
-      elements.startRunRepoTable.appendChild(row);
-      elements.startRunRepoCountMeta.textContent = "Catalog load failed. Retry from Configure Next Run.";
       toastAlert({
         id: "start_run_catalog_error",
         run_id: "",
@@ -4869,6 +4940,45 @@ async function openStartRunModal(action = "start") {
         detail: String(error),
       });
     }
+  }
+  try {
+    await loadLocalRepos(true);
+    launcherCatalogReady = true;
+  } catch (error) {
+    const canUseCachedLocal = Array.isArray(state.localRepoCatalog) && state.localRepoCatalog.length > 0;
+    if (canUseCachedLocal) {
+      toastAlert({
+        id: "start_run_local_catalog_stale",
+        run_id: "",
+        severity: "warn",
+        title: "Using cached local repo scan",
+        detail: String(error),
+      });
+      launcherCatalogReady = true;
+    } else {
+      toastAlert({
+        id: "start_run_local_catalog_error",
+        run_id: "",
+        severity: "warn",
+        title: "Local repo scan failed",
+        detail: String(error),
+      });
+    }
+  }
+
+  rebuildStartRunCatalogFromSources();
+  if (state.repoCatalog.length) {
+    renderStartRunRepoTable();
+  } else {
+    clearNode(elements.startRunRepoTable);
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 6;
+    cell.className = "muted";
+    cell.textContent = "No repositories found in catalog or local scan for selected Code Root.";
+    row.appendChild(cell);
+    elements.startRunRepoTable.appendChild(row);
+    elements.startRunRepoCountMeta.textContent = "No repositories found. Set Code Root and scan local repos.";
   }
 
   setStartRunGithubBusy(true);
@@ -4891,7 +5001,7 @@ async function openStartRunModal(action = "start") {
     setStartRunGithubBusy(false);
   }
   setStartRunModalBusy(false);
-  return localCatalogReady;
+  return launcherCatalogReady;
 }
 
 async function openRunLauncherPage(action = "start") {
@@ -5907,6 +6017,7 @@ elements.startRunSelectNoneBtn.addEventListener("click", () => {
 });
 
 elements.startRunCodeRoot.addEventListener("change", () => {
+  state.localRepoCatalogUpdatedAt = 0;
   state.githubRepoCatalogUpdatedAt = 0;
   state.githubStatusUpdatedAt = 0;
 });
@@ -5916,6 +6027,9 @@ elements.startRunCodeRoot.addEventListener("keydown", async (event) => {
   event.preventDefault();
   setStartRunGithubBusy(true);
   try {
+    await loadLocalRepos(true);
+    rebuildStartRunCatalogFromSources();
+    renderStartRunRepoTable();
     await loadGithubRepos(true);
     renderStartRunGithubRepoTable();
   } catch (error) {
@@ -5923,9 +6037,10 @@ elements.startRunCodeRoot.addEventListener("keydown", async (event) => {
       id: "github_repos_reload_error",
       run_id: "",
       severity: "warn",
-      title: "GitHub fetch failed",
+      title: "Code Root refresh failed",
       detail: String(error),
     });
+    renderStartRunRepoTable();
     renderStartRunGithubRepoTable();
   } finally {
     setStartRunGithubBusy(false);
@@ -5951,6 +6066,25 @@ elements.startRunGithubSelectNoneBtn.addEventListener("click", () => {
     state.githubSelection[key] = { enabled: false };
   });
   renderStartRunGithubRepoTable();
+});
+
+elements.startRunLocalRefreshBtn.addEventListener("click", async () => {
+  setStartRunGithubBusy(true);
+  try {
+    await loadLocalRepos(true);
+    rebuildStartRunCatalogFromSources();
+    renderStartRunRepoTable();
+  } catch (error) {
+    toastAlert({
+      id: "local_repos_refresh_error",
+      run_id: "",
+      severity: "warn",
+      title: "Local repo scan failed",
+      detail: String(error),
+    });
+  } finally {
+    setStartRunGithubBusy(false);
+  }
 });
 
 elements.startRunGithubRefreshBtn.addEventListener("click", async () => {

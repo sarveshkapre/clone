@@ -73,6 +73,7 @@ Defaults:
 - Live toast notifications for new warn/critical alerts
 - Run controls (start/stop/restart) for `scripts/run_clone_loop.sh`
 - Run Launcher GitHub import flow (detect `gh` auth, fetch owner repos, select/import into chosen code root, auto-upsert `repos.yaml`)
+- Run Launcher local scan flow (scan selected `Code Root` for git repos and include them in launch selection)
 - `Normalize Loops` control to collapse duplicate loop process groups safely
 - Live commit stream (last N hours)
 - Repo states (running/no-change/skipped) for selected run
@@ -110,6 +111,7 @@ Runtime files under `logs/`:
 - This app reads local files under `logs/` and repo metadata from `repos.yaml`.
 - Commit stream uses local `git log` calls per repo listed in `repos.yaml`.
 - GitHub import in Run Launcher uses local `gh` CLI (`gh auth login` required) and works with any writable code-root path.
+- Local discovery in Run Launcher scans filesystem git repositories under `Code Root`; repository lists are dynamic (no hardcoded repo names).
 - No authentication is required for local use.
 - Non-JSON repos files are parsed with a built-in YAML-like fallback parser (no `jq` needed).
 - Control actions are local-only and target the run loop script in this Clone workspace.

@@ -207,6 +207,25 @@ cd /path/to/Clone
 
 Open `http://127.0.0.1:8787`.
 
+Standardized CLI entrypoint (recommended):
+
+```bash
+cd /path/to/Clone
+npm link
+clone precheck
+clone start
+clone status
+```
+
+NPM aliases (no global link required):
+
+```bash
+cd /path/to/Clone
+npm run clone:precheck
+npm run clone:start
+npm run clone:status
+```
+
 Stop / restart:
 
 ```bash
@@ -228,6 +247,7 @@ Highlights:
 - live alerts + toasts
 - run controls (`start` / `stop` / `restart`)
 - GitHub onboarding in Run Launcher: fetch your own repos via `gh`, import selected repos into any code root, and auto-upsert catalog entries
+- local repo onboarding in Run Launcher: scan selected `Code Root` and include all discovered git repos (no hardcoded repo list)
 - duplicate-loop normalization (`Normalize Loops`)
 - optional webhook notifications (rules by alert type + cooldown + test send)
 - stream rail UX (pause/resume, refresh, UTC/local time mode, compact mode, keyboard shortcuts)

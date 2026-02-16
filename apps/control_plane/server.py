@@ -1945,6 +1945,99 @@ class RunController:
             self._write_repos_payload(payload)
         return added, updated
 
+    def local_repos(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
+        request = request or {}
+        code_root = self._resolve_code_root(request.get("code_root"))
+        max_depth = max(1, min(safe_int(request.get("max_depth"), 6), 16))
+        limit = max(1, min(safe_int(request.get("limit"), 5000), 25000))
+        if not code_root.exists():
+            return {
+                "ok": False,
+                "error": f"code_root does not exist: {code_root}",
+                "code_root": str(code_root),
+                "count": 0,
+                "repos": [],
+            }
+        if not code_root.is_dir():
+            return {
+                "ok": False,
+                "error": f"code_root is not a directory: {code_root}",
+                "code_root": str(code_root),
+                "count": 0,
+                "repos": [],
+            }
+
+        ignored_dirs = {
+            ".git",
+            ".hg",
+            ".svn",
+            "node_modules",
+            ".next",
+            ".cache",
+            "__pycache__",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".venv",
+            "venv",
+            "dist",
+            "build",
+            "target",
+            ".idea",
+            ".vscode",
+        }
+        catalog_paths = {str(item.get("path") or "") for item in self.monitor.repos_catalog()}
+        root_depth = len(code_root.parts)
+        repos: list[dict[str, Any]] = []
+        seen: set[str] = set()
+
+        for raw_root, dirs, _files in os.walk(code_root, topdown=True):
+            root_path = Path(raw_root)
+            depth = len(root_path.parts) - root_depth
+
+            if depth > max_depth:
+                dirs[:] = []
+                continue
+
+            pruned_dirs: list[str] = []
+            for name in dirs:
+                if name in ignored_dirs:
+                    continue
+                if name.startswith("."):
+                    continue
+                pruned_dirs.append(name)
+            has_git_dir = ".git" in dirs or root_path.joinpath(".git").is_dir()
+            dirs[:] = pruned_dirs
+
+            if not has_git_dir:
+                continue
+
+            repo_path = str(root_path.resolve())
+            if repo_path in seen:
+                dirs[:] = []
+                continue
+            seen.add(repo_path)
+            repos.append(
+                {
+                    "name": root_path.name or repo_path,
+                    "path": repo_path,
+                    "branch": self._git_default_branch(Path(repo_path), fallback="main"),
+                    "objective": "",
+                    "in_catalog": repo_path in catalog_paths,
+                    "source": "local_scan",
+                }
+            )
+            dirs[:] = []
+            if len(repos) >= limit:
+                break
+
+        repos.sort(key=lambda item: str(item.get("name") or "").lower())
+        return {
+            "ok": True,
+            "code_root": str(code_root),
+            "count": len(repos),
+            "repos": repos,
+        }
+
     def github_status(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
         request = request or {}
         code_root = self._resolve_code_root(request.get("code_root"))
@@ -3432,6 +3525,18 @@ class APIHandler(SimpleHTTPRequestHandler):
             "/api/repositories",
         }:
             self._send_json({"generated_at": iso_utc(utc_now()), "repos": self.monitor.repos_catalog()})
+            return
+
+        if normalized_path in {"/api/local_repos", "/api/repos_local", "/api/repos/local"}:
+            payload = self.controller.local_repos(
+                {
+                    "code_root": query.get("code_root", [""])[0],
+                    "max_depth": query.get("max_depth", ["6"])[0],
+                    "limit": query.get("limit", ["5000"])[0],
+                }
+            )
+            payload["generated_at"] = iso_utc(utc_now())
+            self._send_json(payload, status=200 if payload.get("ok") else 400)
             return
 
         if normalized_path == "/api/github/status":
