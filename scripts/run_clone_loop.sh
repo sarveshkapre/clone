@@ -9,6 +9,7 @@ fi
 MAX_HOURS="${MAX_HOURS:-0}"
 MAX_CYCLES="${MAX_CYCLES:-1}"
 MODEL="${MODEL:-gpt-5.3-codex}"
+SPARK_MODEL="${SPARK_MODEL:-gpt-5.3-codex-spark}"
 SLEEP_SECONDS="${SLEEP_SECONDS:-120}"
 LOG_DIR="${LOG_DIR:-logs}"
 TRACKER_FILE_NAME="${TRACKER_FILE_NAME:-CLONE_FEATURES.md}"
@@ -53,6 +54,11 @@ TASK_QUEUE_FILE="${TASK_QUEUE_FILE:-logs/task_queue.json}"
 TASK_QUEUE_MAX_ITEMS_PER_REPO="${TASK_QUEUE_MAX_ITEMS_PER_REPO:-5}"
 TASK_QUEUE_AUTO_CREATE="${TASK_QUEUE_AUTO_CREATE:-1}"
 TASK_QUEUE_CLAIM_TTL_MINUTES="${TASK_QUEUE_CLAIM_TTL_MINUTES:-240}"
+SPARK_MAX_CLAIM_TASKS="${SPARK_MAX_CLAIM_TASKS:-3}"
+SPARK_MAX_TOUCHED_FILES="${SPARK_MAX_TOUCHED_FILES:-4}"
+SPARK_MAX_LINE_DELTA="${SPARK_MAX_LINE_DELTA:-240}"
+SPARK_MAX_TASK_WORDS="${SPARK_MAX_TASK_WORDS:-30}"
+SPARK_REQUIRE_VERIFY_HINT="${SPARK_REQUIRE_VERIFY_HINT:-1}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IDEA_PROCESSOR_SCRIPT="${IDEA_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_ideas.sh}"
 INTENT_PROCESSOR_SCRIPT="${INTENT_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_intents.sh}"
@@ -70,6 +76,9 @@ REPO_PROGRESS_DIR="$LOG_DIR/run-${RUN_ID}-repo-progress"
 mkdir -p "$WORKER_STATUS_DIR"
 mkdir -p "$REPO_LOCK_DIR"
 mkdir -p "$REPO_PROGRESS_DIR"
+LAST_CLAIMED_TASKS_JSON="[]"
+LAST_CLAIMED_TASKS_COUNT=0
+SPARK_ROUTE_REASON="not_considered"
 
 if ! command -v jq >/dev/null 2>&1; then
   echo "jq is required" >&2
@@ -211,6 +220,31 @@ fi
 
 if ! [[ "$TASK_QUEUE_CLAIM_TTL_MINUTES" =~ ^[1-9][0-9]*$ ]]; then
   echo "TASK_QUEUE_CLAIM_TTL_MINUTES must be a positive integer, got: $TASK_QUEUE_CLAIM_TTL_MINUTES" >&2
+  exit 1
+fi
+
+if ! [[ "$SPARK_MAX_CLAIM_TASKS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SPARK_MAX_CLAIM_TASKS must be a positive integer, got: $SPARK_MAX_CLAIM_TASKS" >&2
+  exit 1
+fi
+
+if ! [[ "$SPARK_MAX_TOUCHED_FILES" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SPARK_MAX_TOUCHED_FILES must be a positive integer, got: $SPARK_MAX_TOUCHED_FILES" >&2
+  exit 1
+fi
+
+if ! [[ "$SPARK_MAX_LINE_DELTA" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SPARK_MAX_LINE_DELTA must be a positive integer, got: $SPARK_MAX_LINE_DELTA" >&2
+  exit 1
+fi
+
+if ! [[ "$SPARK_MAX_TASK_WORDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "SPARK_MAX_TASK_WORDS must be a positive integer, got: $SPARK_MAX_TASK_WORDS" >&2
+  exit 1
+fi
+
+if ! [[ "$SPARK_REQUIRE_VERIFY_HINT" =~ ^[01]$ ]]; then
+  echo "SPARK_REQUIRE_VERIFY_HINT must be 0 or 1, got: $SPARK_REQUIRE_VERIFY_HINT" >&2
   exit 1
 fi
 
@@ -677,6 +711,12 @@ log_event INFO "Task queue file: $TASK_QUEUE_FILE"
 log_event INFO "Task queue max items per repo: $TASK_QUEUE_MAX_ITEMS_PER_REPO"
 log_event INFO "Task queue auto create: $TASK_QUEUE_AUTO_CREATE"
 log_event INFO "Task queue claim TTL minutes: $TASK_QUEUE_CLAIM_TTL_MINUTES"
+log_event INFO "Spark model: $SPARK_MODEL"
+log_event INFO "Spark max claimed tasks: $SPARK_MAX_CLAIM_TASKS"
+log_event INFO "Spark max touched files: $SPARK_MAX_TOUCHED_FILES"
+log_event INFO "Spark max line delta: $SPARK_MAX_LINE_DELTA"
+log_event INFO "Spark max task words: $SPARK_MAX_TASK_WORDS"
+log_event INFO "Spark requires verify hint: $SPARK_REQUIRE_VERIFY_HINT"
 log_event INFO "Run log: $RUN_LOG"
 log_event INFO "Events log: $EVENTS_LOG"
 log_event INFO "Status file: $STATUS_FILE"
@@ -859,6 +899,192 @@ queue_lines_to_json_array() {
   printf '%s\n' "$raw" | sed '/^[[:space:]]*$/d' | jq -R -s -c 'split("\n") | map(select(length > 0))'
 }
 
+queue_task_has_strict_atomic_intent() {
+  local candidate="$1"
+  local lower action_count has_target has_verification
+  lower="$(printf '%s' "$candidate" | tr '[:upper:]' '[:lower:]' | sed -E 's/[[:space:]]+/ /g' | sed -E 's/^ +| +$//g')"
+
+  # Ensure a single, deterministic action verb is first.
+  if [[ ! "$lower" =~ ^(fix|add|update|remove|rename|change|set|create|delete|enable|disable|guard|bump|append|tweak|adjust|improve|optimize|move|replace)\b ]]; then
+    return 1
+  fi
+
+  action_count="$(awk -v text="$lower" '{
+    split(text, tokens, /[[:space:]]+/);
+    count = 0;
+    for (i in tokens) {
+      if (tokens[i] ~ /^(fix|add|update|remove|rename|change|set|create|delete|enable|disable|guard|bump|append|tweak|adjust|improve|optimize|move|replace)$/) {
+        count++
+      }
+    }
+    print count
+  }')"
+  if ! [[ "$action_count" =~ ^[0-9]+$ ]] || (( action_count > 1 )); then
+    return 1
+  fi
+
+  # Require one explicit target or concrete anchor for deterministic execution.
+  has_target=0
+  if [[ "$lower" =~ ([A-Za-z0-9_./-]+\.[A-Za-z0-9]{1,8})(/)? ]] || [[ "$lower" == *" file "* ]] || [[ "$lower" == *" endpoint "* ]] || [[ "$lower" == *" route "* ]] || [[ "$lower" == *" function "* ]] || [[ "$lower" == *" component "* ]] || [[ "$lower" == *" test "* ]] || [[ "$lower" == *" config "* ]] || [[ "$lower" == *" workflow "* ]]; then
+    has_target=1
+  fi
+  if (( has_target == 0 )); then
+    return 1
+  fi
+
+  has_verification="0"
+  if [[ "$lower" == *" verify "* ]] || [[ "$lower" == *" check "* ]] || [[ "$lower" == *" test "* ]] || [[ "$lower" == *" lint "* ]]; then
+    has_verification="1"
+  fi
+  if [[ "$SPARK_REQUIRE_VERIFY_HINT" == "1" && "$has_verification" == "0" ]]; then
+    return 1
+  fi
+
+  return 0
+}
+
+queue_task_candidate_is_spark() {
+  local task_json="$1"
+  local title details combined lower
+  local word_count
+  title="$(jq -r '.title // .task // ""' <<<"$task_json" 2>/dev/null || true)"
+  details="$(jq -r '.details // .description // ""' <<<"$task_json" 2>/dev/null || true)"
+  combined="$(printf '%s %s' "$title" "$details" | sed -E 's/[[:space:]]+/ /g' | sed -E 's/^ +| +$//g')"
+  if [[ -z "$combined" ]]; then
+    SPARK_TASK_REJECTION_REASON="empty_task_text"
+    return 1
+  fi
+
+  word_count="$(awk '{print NF}' <<<"$combined")"
+  if ! [[ "$word_count" =~ ^[0-9]+$ ]] || (( word_count == 0 )); then
+    SPARK_TASK_REJECTION_REASON="non_numeric_task_len"
+    return 1
+  fi
+  if (( word_count > SPARK_MAX_TASK_WORDS )); then
+    SPARK_TASK_REJECTION_REASON="task_too_long"
+    return 1
+  fi
+
+  lower="$(printf '%s' "$combined" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$lower" == *" redesign"* || "$lower" == *" re-architect"* || "$lower" == *"major refactor"* || "$lower" == *"new workflow"* || "$lower" == *"state redesign"* || "$lower" == *"market analysis"* || "$lower" == *"competitor"* || "$lower" == *"product strategy"* || "$lower" == *"security model"* || "$lower" == *"agent loop"* || "$lower" == *"major redesign"* ]]; then
+    SPARK_TASK_REJECTION_REASON="contains_complex_scope"
+    return 1
+  fi
+
+  if [[ "$lower" == *" and "* || "$lower" == *" then "* || "$lower" == *" also "* || "$lower" == *","* || "$lower" == *";"* || "$lower" == *" plus "* || "$lower" == *" or "* ]]; then
+    SPARK_TASK_REJECTION_REASON="non_atomic_task"
+    return 1
+  fi
+
+  if ! queue_task_has_strict_atomic_intent "$combined"; then
+    SPARK_TASK_REJECTION_REASON="no_atomic_action"
+    if [[ "$lower" == *"verify"* || "$lower" == *"check"* || "$lower" == *"test"* ]]; then
+      SPARK_TASK_REJECTION_REASON="no_atomic_action_or_target"
+    fi
+    if [[ "$SPARK_REQUIRE_VERIFY_HINT" == "1" && "$lower" != *"verify"* && "$lower" != *"check"* && "$lower" != *"test"* ]]; then
+      SPARK_TASK_REJECTION_REASON="requires_verification_hint"
+    fi
+    return 1
+  fi
+
+  SPARK_TASK_REJECTION_REASON=""
+  return 0
+}
+
+evaluate_queue_route_for_spark() {
+  local repo_name="$1"
+  local claim_json="$2"
+  local queue_count="$3"
+  local task_json task_id candidate_count
+  if [[ -z "$claim_json" || "$claim_json" == "null" ]]; then
+    claim_json="[]"
+  fi
+
+  if ! [[ "$queue_count" =~ ^[0-9]+$ ]] || (( queue_count == 0 )); then
+    SPARK_ROUTE_REASON="no_queue_tasks"
+    return 1
+  fi
+  if (( queue_count > SPARK_MAX_CLAIM_TASKS )); then
+    SPARK_ROUTE_REASON="too_many_claimed_tasks"
+    return 1
+  fi
+
+  candidate_count=0
+  while IFS= read -r task_json; do
+    candidate_count="$((candidate_count + 1))"
+    if ! queue_task_candidate_is_spark "$task_json"; then
+      task_id="$(jq -r '.id // "unknown"' <<<"$task_json" 2>/dev/null || true)"
+      SPARK_ROUTE_REASON="task_not_small id=$task_id reason=${SPARK_TASK_REJECTION_REASON:-unknown}"
+      return 1
+    fi
+  done < <(jq -c '.[]' <<<"$claim_json")
+
+  if (( candidate_count == 0 )); then
+    SPARK_ROUTE_REASON="no_valid_claimed_tasks"
+    return 1
+  fi
+
+  SPARK_ROUTE_REASON="spark_small_atomic_tasks_${candidate_count}"
+  return 0
+}
+
+annotate_claimed_task_route() {
+  local repo_name="$1"
+  local pass_label="$2"
+  local route_model="$3"
+  local route_mode="$4"
+  local route_reason="$5"
+  local claim_ids_json claim_count route_claimed_count now tmp
+
+  if [[ -z "$LAST_CLAIMED_TASKS_JSON" || "$LAST_CLAIMED_TASKS_JSON" == "[]" ]]; then
+    return 0
+  fi
+
+  claim_ids_json="$(jq -c '[.[] | .id | select(type == "string" and length > 0)]' <<<"$LAST_CLAIMED_TASKS_JSON" 2>/dev/null || echo "[]")"
+  if [[ -z "$claim_ids_json" || "$claim_ids_json" == "null" ]]; then
+    claim_ids_json="[]"
+  fi
+  claim_count="$(jq -r 'length' <<<"$claim_ids_json" 2>/dev/null || echo 0)"
+  if ! [[ "$claim_count" =~ ^[0-9]+$ ]]; then
+    claim_count=0
+  fi
+  route_claimed_count="$LAST_CLAIMED_TASKS_COUNT"
+  if ! [[ "$route_claimed_count" =~ ^[0-9]+$ ]]; then
+    route_claimed_count=0
+  fi
+  if (( claim_count == 0 )); then
+    return 0
+  fi
+
+  now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  tmp="$(mktemp)"
+  if ! jq \
+    --argjson claim_ids "$claim_ids_json" \
+    --arg model "$route_model" \
+    --arg mode "$route_mode" \
+    --arg reason "$route_reason" \
+    --arg now "$now" \
+    --argjson claimed_count "$route_claimed_count" \
+    '
+    .generated_at = $now
+    | .tasks = ((.tasks // []) | map(
+        if ($claim_ids | index(.id)) != null then
+          .route_model = $model
+          | .route_mode = $mode
+          | .route_reason = $reason
+          | .route_claimed_count = $claimed_count
+          | .route_updated_at = $now
+        else . end
+      ))
+    ' "$TASK_QUEUE_FILE" >"$tmp"; then
+    rm -f "$tmp"
+    return 0
+  fi
+  mv "$tmp" "$TASK_QUEUE_FILE"
+  state_db_sync_task_queue_snapshot
+  log_event INFO "TASK_QUEUE_ROUTE repo=$repo_name pass=$pass_label model=$route_model mode=$route_mode reason=$route_reason claimed=$claimed_count"
+}
+
 requeue_stale_claimed_tasks() {
   local stale_before_epoch stale_count tmp now
   ensure_task_queue_file
@@ -917,6 +1143,8 @@ claim_queue_tasks_for_repo() {
   local pass_label="$3"
   local claim_json claim_ids_json claim_count tmp now
 
+  LAST_CLAIMED_TASKS_JSON="[]"
+  LAST_CLAIMED_TASKS_COUNT=0
   ensure_task_queue_file
   if [[ ! -f "$TASK_QUEUE_FILE" ]]; then
     return 0
@@ -952,6 +1180,8 @@ claim_queue_tasks_for_repo() {
     claim_count=0
   fi
   if (( claim_count == 0 )); then
+    LAST_CLAIMED_TASKS_JSON="[]"
+    LAST_CLAIMED_TASKS_COUNT=0
     return 0
   fi
 
@@ -979,6 +1209,8 @@ claim_queue_tasks_for_repo() {
   fi
   mv "$tmp" "$TASK_QUEUE_FILE"
   state_db_sync_task_queue_snapshot
+  LAST_CLAIMED_TASKS_JSON="$claim_json"
+  LAST_CLAIMED_TASKS_COUNT="$claim_count"
 
   jq -r '
     .[]
@@ -1094,6 +1326,73 @@ finalize_queue_tasks_for_repo() {
   log_event INFO "TASK_QUEUE pass=$pass_label done=$done_count blocked=$blocked_count requeued=$requeue_count"
 }
 
+run_codex_session() {
+  local model="$1"
+  local repo_path="$2"
+  local prompt_text="$3"
+  local last_message_file="$4"
+  local pass_log_file="$5"
+  local run_log_file="$6"
+  local -a codex_cmd
+  local rc
+
+  codex_cmd=(codex exec --cd "$repo_path" --output-last-message "$last_message_file")
+  if [[ -n "$CODEX_SANDBOX_FLAG" ]]; then
+    codex_cmd+=("$CODEX_SANDBOX_FLAG")
+  fi
+  if [[ -n "$model" ]]; then
+    codex_cmd+=(--model "$model")
+  fi
+  codex_cmd+=("$prompt_text")
+
+  "${codex_cmd[@]}" 2>&1 | tee -a "$run_log_file" "$pass_log_file"
+  rc="${PIPESTATUS[0]}"
+  return "$rc"
+}
+
+spark_change_deltas() {
+  local repo_path="$1"
+  local base_ref="$2"
+  local files lines
+  local file_count line_count add_count del_count
+  if [[ -z "$base_ref" ]]; then
+    echo "0 0"
+    return 0
+  fi
+  file_count="$(git -C "$repo_path" diff --name-only "$base_ref"..HEAD | wc -l | tr -d '[:space:]')"
+  if ! [[ "$file_count" =~ ^[0-9]+$ ]]; then
+    file_count=0
+  fi
+
+  lines=0
+  while IFS=$'\t' read -r add_count del_count _; do
+    if [[ "$add_count" == "-" || "$del_count" == "-" ]]; then
+      lines="999999"
+      break
+    fi
+    if ! [[ "$add_count" =~ ^[0-9]+$ ]] || ! [[ "$del_count" =~ ^[0-9]+$ ]]; then
+      continue
+    fi
+    lines="$((lines + add_count + del_count))"
+  done < <(git -C "$repo_path" diff --numstat "$base_ref"..HEAD 2>/dev/null || true)
+  echo "$file_count $lines"
+}
+
+spark_requires_fallback() {
+  local file_count="$1"
+  local line_count="$2"
+  if ! [[ "$file_count" =~ ^[0-9]+$ ]] || ! [[ "$line_count" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  if (( file_count > SPARK_MAX_TOUCHED_FILES )); then
+    return 0
+  fi
+  if (( line_count > SPARK_MAX_LINE_DELTA )); then
+    return 0
+  fi
+  return 1
+}
+
 repo_is_ui_facing() {
   local repo_path="$1"
   local package_file
@@ -1135,13 +1434,8 @@ uiux_checklist_entry_count() {
 
   awk '
     BEGIN { IGNORECASE=1; count=0 }
-    /UIUX_CHECKLIST:[[:space:]]*(PASS|BLOCKED)/ {
-      if (
-        $0 ~ /flow=[^[:space:]|;][^|;]*/ &&
-        $0 ~ /desktop=[^[:space:]|;][^|;]*/ &&
-        $0 ~ /mobile=[^[:space:]|;][^|;]*/ &&
-        $0 ~ /a11y=[^[:space:]|;][^|;]*/
-      ) {
+    {
+      if ($0 ~ /^[[:space:]]*UIUX_CHECKLIST:[[:space:]]*(PASS|BLOCKED)[[:space:]]*\|[[:space:]]*flow=[^[:space:]|;]+[[:space:]]*\|[[:space:]]*desktop=[^[:space:]|;]+[[:space:]]*\|[[:space:]]*mobile=[^[:space:]|;]+[[:space:]]*\|[[:space:]]*a11y=[^[:space:]|;]+([[:space:]]*\|.*)?$/) {
         count++
       }
     }
@@ -1708,7 +2002,7 @@ $uiux_guidance
 
 Required result in $PROJECT_MEMORY_FILE_NAME:
 1) Append one new session line with exact marker: UIUX_CHECKLIST: PASS or UIUX_CHECKLIST: BLOCKED
-2) The same marker line must include explicit fields on that same line:
+2) The same marker line must include explicit fields on that same line in order:
    - flow=<value>
    - desktop=<value>
    - mobile=<value>
@@ -1723,6 +2017,7 @@ Required result in $PROJECT_MEMORY_FILE_NAME:
    - remaining risk or follow-up
 4) If any validation cannot be completed right now, use UIUX_CHECKLIST: BLOCKED and explain what is missing.
 5) Keep scope tight to this gate requirement and make only minimal necessary updates.
+6) Keep the required key order exactly as shown: flow, desktop, mobile, a11y.
 6) Commit and push directly to origin/$branch when any file changed.
 
 Rules:
@@ -1768,7 +2063,7 @@ PROMPT
     "$repo_path" \
     "UI/UX checklist gate failed" \
     "UI-facing repository session ended without a valid UIUX_CHECKLIST marker line" \
-    "required checklist evidence (flow= desktop= mobile= a11y=) was not written on one marker line in $PROJECT_MEMORY_FILE_NAME" \
+    "required checklist evidence (flow=desktop=mobile=a11y= in one marker line on UIUX_CHECKLIST: PASS/BLOCKED) was not written in $PROJECT_MEMORY_FILE_NAME" \
     "attempted dedicated UI/UX gate remediation run and kept logs" \
     "rerun with a focused UI validation pass and ensure checklist line is appended with required keys" \
     "gate_log=$gate_log_file pass=$pass"
@@ -2094,6 +2389,8 @@ run_repo() {
   local cycles_done_before commits_done_before cycles_done_after commits_done_after
   local project_memory_file uiux_gate_required uiux_checklist_before
   local queue_task_block queue_claimed_count
+  local codex_model queue_task_mode codex_rc codex_full_needed
+  local spark_files_changed spark_lines_changed
   name="$(jq -r '.name' <<<"$repo_json")"
   path="$(jq -r '.path' <<<"$repo_json")"
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
@@ -2243,6 +2540,16 @@ run_repo() {
     log_event INFO "TASK_QUEUE repo=$name pass=$pass_label claimed=0"
   fi
 
+  codex_model="$MODEL"
+  queue_task_mode="full_model"
+  SPARK_ROUTE_REASON="not_considered"
+  if evaluate_queue_route_for_spark "$name" "$LAST_CLAIMED_TASKS_JSON" "$LAST_CLAIMED_TASKS_COUNT"; then
+    codex_model="$SPARK_MODEL"
+    queue_task_mode="spark_if_small"
+  fi
+  log_event INFO "MODEL_ROUTE repo=$name pass=$pass_label model=$codex_model reason=$SPARK_ROUTE_REASON claims=$LAST_CLAIMED_TASKS_COUNT"
+  annotate_claimed_task_route "$name" "$pass_label" "$codex_model" "$queue_task_mode" "$SPARK_ROUTE_REASON"
+
   IFS= read -r -d '' prompt <<PROMPT || true
 You are my autonomous maintainer for this repository.
 
@@ -2254,6 +2561,9 @@ $objective
 
 Operator queue tasks claimed for this pass ($queue_claimed_count):
 $(if [[ -n "$queue_task_block" ]]; then printf '%s\n' "$queue_task_block"; else echo "- None"; fi)
+
+Queue execution mode:
+- $queue_task_mode
 
 Execution mode for this repo session:
 - This run is part of global cycle $cycle_id.
@@ -2386,25 +2696,82 @@ GitHub CI signals:
 $ci_context
 PROMPT
 
-  codex_cmd=(codex exec --cd "$path" --output-last-message "$last_message_file")
-  if [[ -n "$CODEX_SANDBOX_FLAG" ]]; then
-    codex_cmd+=("$CODEX_SANDBOX_FLAG")
-  fi
-  if [[ -n "$MODEL" ]]; then
-    codex_cmd+=(--model "$MODEL")
-  fi
-  codex_cmd+=("$prompt")
+  codex_full_needed=0
+  TASKS_PER_REPO="$repo_tasks_per_repo" run_codex_session \
+    "$codex_model" \
+    "$path" \
+    "$prompt" \
+    "$last_message_file" \
+    "$pass_log_file" \
+    "$RUN_LOG"
+  codex_rc="$?"
+  if (( codex_rc != 0 )); then
+    if [[ "$codex_model" == "$SPARK_MODEL" ]]; then
+      log_event WARN "SPARK_EXEC_FAIL repo=$name pass=$pass_label model=$codex_model rc=$codex_rc"
+      if [[ -n "$before_head" ]]; then
+        git -C "$path" reset --hard "$before_head" >>"$RUN_LOG" 2>&1 || true
+      fi
+      codex_full_needed=1
+      codex_model="$MODEL"
+      queue_task_mode="spark_fallback_full"
+      SPARK_ROUTE_REASON="spark_exec_fail_fallback"
+      annotate_claimed_task_route "$name" "$pass_label" "$codex_model" "$queue_task_mode" "$SPARK_ROUTE_REASON"
+      log_event INFO "MODEL_ROUTE repo=$name pass=$pass_label model=$codex_model reason=spark_exec_fail_fallback claims=$LAST_CLAIMED_TASKS_COUNT"
+      TASKS_PER_REPO="$repo_tasks_per_repo" run_codex_session \
+        "$codex_model" \
+        "$path" \
+        "$prompt" \
+        "$last_message_file" \
+        "$pass_log_file" \
+        "$RUN_LOG"
+      codex_rc="$?"
+      if (( codex_rc != 0 )); then
+        codex_full_needed=2
+      fi
+    else
+      codex_full_needed=2
+    fi
 
-  if ! TASKS_PER_REPO="$repo_tasks_per_repo" "${codex_cmd[@]}" 2>&1 | tee -a "$RUN_LOG" "$pass_log_file"; then
-    log_event WARN "FAIL repo=$name reason=codex_exec pass=$pass_label pass_log=$pass_log_file"
-    append_incident_entry \
-      "$path" \
-      "Codex execution failure" \
-      "Repo session did not complete cleanly" \
-      "codex exec returned a non-zero status" \
-      "Captured failure logs and kept repository in a recoverable state" \
-      "Re-run with same pass context and inspect pass log before retrying" \
-      "pass_log=$pass_log_file"
+    if (( codex_full_needed != 0 )); then
+      log_event WARN "FAIL repo=$name reason=codex_exec pass=$pass_label pass_log=$pass_log_file"
+      append_incident_entry \
+        "$path" \
+        "Codex execution failure" \
+        "Repo session did not complete cleanly" \
+        "codex exec returned a non-zero status" \
+        "Captured failure logs and kept repository in a recoverable state" \
+        "Re-run with same pass context and inspect pass log before retrying" \
+        "pass_log=$pass_log_file model=$codex_model"
+    fi
+  elif [[ "$codex_model" == "$SPARK_MODEL" ]]; then
+    read -r spark_files_changed spark_lines_changed <<<"$(spark_change_deltas "$path" "$before_head")"
+    if spark_requires_fallback "$spark_files_changed" "$spark_lines_changed"; then
+      log_event WARN "SPARK_DEMOTION repo=$name pass=$pass_label model=$codex_model files=$spark_files_changed lines=$spark_lines_changed limits=${SPARK_MAX_TOUCHED_FILES}/${SPARK_MAX_LINE_DELTA}"
+      if [[ -n "$before_head" ]]; then
+        git -C "$path" reset --hard "$before_head" >>"$RUN_LOG" 2>&1 || true
+      fi
+      codex_full_needed=1
+      codex_model="$MODEL"
+      queue_task_mode="spark_fallback_scope"
+      SPARK_ROUTE_REASON="spark_scope_fallback"
+      annotate_claimed_task_route "$name" "$pass_label" "$codex_model" "$queue_task_mode" "$SPARK_ROUTE_REASON"
+      log_event INFO "MODEL_ROUTE repo=$name pass=$pass_label model=$codex_model reason=spark_scope_fallback claims=$LAST_CLAIMED_TASKS_COUNT"
+      TASKS_PER_REPO="$repo_tasks_per_repo" run_codex_session \
+        "$codex_model" \
+        "$path" \
+        "$prompt" \
+        "$last_message_file" \
+        "$pass_log_file" \
+        "$RUN_LOG"
+      codex_rc="$?"
+      if (( codex_rc != 0 )); then
+        codex_full_needed=2
+      fi
+    fi
+  fi
+
+  if (( codex_full_needed == 2 )); then
+    log_event WARN "FAIL repo=$name reason=codex_exec_full_model_failed_after_fallback pass=$pass_label pass_log=$pass_log_file"
   fi
 
   current_branch="$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"

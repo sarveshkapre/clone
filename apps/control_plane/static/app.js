@@ -2815,6 +2815,23 @@ function setTaskQueueBusy(busy) {
   if (elements.taskQueuePriority) elements.taskQueuePriority.disabled = state.taskQueueBusy;
 }
 
+function createExecutionModeBadge(mode, reason, claimedCount) {
+  const normalizedMode = String(mode || "full_model").trim() || "full_model";
+  const friendly = normalizedMode.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  const reasonText = String(reason || "").trim();
+  const countText = Number(claimedCount);
+  const badge = document.createElement("span");
+  badge.className = `state-badge execution-mode ${normalizedMode}`;
+  badge.textContent = friendly || "full model";
+  if (reasonText) {
+    const suffix = Number.isFinite(countText) && countText > 0 ? ` (${countText})` : "";
+    badge.title = `${reasonText}${suffix}`;
+  } else if (Number.isFinite(countText) && countText > 0) {
+    badge.title = `claimed ${countText} task${countText === 1 ? "" : "s"}`;
+  }
+  return badge;
+}
+
 function renderTaskQueue() {
   if (!elements.taskQueueTable || !elements.taskQueueMeta) return;
   clearNode(elements.taskQueueTable);
@@ -2830,7 +2847,7 @@ function renderTaskQueue() {
   if (!state.taskQueueItems.length) {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 9;
     cell.className = "muted";
     cell.textContent = "No queue tasks match the current filter.";
     row.appendChild(cell);
@@ -2854,6 +2871,19 @@ function renderTaskQueue() {
     const repoCell = document.createElement("td");
     repoCell.className = "mono";
     repoCell.textContent = item.repo || "*";
+
+    const executionCell = document.createElement("td");
+    executionCell.appendChild(
+      createExecutionModeBadge(
+        item.route_mode,
+        item.route_reason,
+        Number(item.route_claimed_count || 0),
+      ),
+    );
+
+    const modelCell = document.createElement("td");
+    modelCell.className = "mono";
+    modelCell.textContent = item.route_model || "-";
 
     const taskCell = document.createElement("td");
     taskCell.textContent = item.title || "-";
@@ -2889,7 +2919,17 @@ function renderTaskQueue() {
     }
     actionCell.appendChild(actions);
 
-    row.append(idCell, statusCell, priorityCell, repoCell, taskCell, updatedCell, actionCell);
+    row.append(
+      idCell,
+      statusCell,
+      priorityCell,
+      repoCell,
+      executionCell,
+      modelCell,
+      taskCell,
+      updatedCell,
+      actionCell,
+    );
     elements.taskQueueTable.appendChild(row);
   });
 }

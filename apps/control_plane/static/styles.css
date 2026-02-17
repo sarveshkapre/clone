@@ -950,6 +950,20 @@ input[type="password"] {
   color: var(--warn);
 }
 
+.state-badge.execution-mode.spark_if_small,
+.state-badge.execution-mode.spark_fallback_full,
+.state-badge.execution-mode.spark_fallback_scope {
+  border-color: rgba(31, 111, 63, 0.28);
+  background: rgba(41, 97, 65, 0.12);
+  color: var(--ok);
+}
+
+.state-badge.execution-mode.full_model {
+  border-color: rgba(18, 28, 23, 0.22);
+  background: rgba(18, 28, 23, 0.08);
+  color: var(--ink-2);
+}
+
 button {
   border: 1px solid var(--line-strong);
   border-radius: 999px;

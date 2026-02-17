@@ -1526,6 +1526,11 @@ class TaskQueueStore:
             "claimed_at": str(task.get("claimed_at") or ""),
             "done_at": str(task.get("done_at") or ""),
             "blocked_at": str(task.get("blocked_at") or ""),
+            "route_model": str(task.get("route_model") or ""),
+            "route_mode": str(task.get("route_mode") or ""),
+            "route_reason": str(task.get("route_reason") or ""),
+            "route_claimed_count": max(0, safe_int(task.get("route_claimed_count"), 0)),
+            "route_updated_at": str(task.get("route_updated_at") or ""),
         }
 
     def _task_sort_key(self, task: dict[str, Any]) -> tuple[int, str, str]:
@@ -1598,6 +1603,11 @@ class TaskQueueStore:
         repo: str = "*",
         repo_path: str = "",
         priority: int = 3,
+        route_model: str = "",
+        route_mode: str = "",
+        route_reason: str = "",
+        route_claimed_count: int = 0,
+        route_updated_at: str = "",
         source: str = "control_plane",
         task_id: str = "",
     ) -> dict[str, Any]:
@@ -1631,6 +1641,11 @@ class TaskQueueStore:
                 "title": task_title,
                 "details": task_details,
                 "priority": task_priority,
+                "route_model": str(route_model or "").strip(),
+                "route_mode": str(route_mode or "").strip(),
+                "route_reason": str(route_reason or "").strip(),
+                "route_claimed_count": max(0, safe_int(route_claimed_count, 0)),
+                "route_updated_at": str(route_updated_at or "").strip(),
                 "source": task_source,
                 "created_at": now,
                 "updated_at": now,
@@ -3708,6 +3723,11 @@ class APIHandler(SimpleHTTPRequestHandler):
                     repo=str(request.get("repo") or "*"),
                     repo_path=str(request.get("repo_path") or ""),
                     priority=safe_int(request.get("priority"), 3),
+                    route_model=str(request.get("route_model") or ""),
+                    route_mode=str(request.get("route_mode") or ""),
+                    route_reason=str(request.get("route_reason") or ""),
+                    route_claimed_count=safe_int(request.get("route_claimed_count"), 0),
+                    route_updated_at=str(request.get("route_updated_at") or ""),
                     source=str(request.get("source") or "control_plane"),
                     task_id=str(request.get("id") or ""),
                 )
