@@ -13,7 +13,7 @@ Runtime v2 adds a parallel scaffold for the Next.js web app + Node worker while 
 - `apps/web`: Next.js app-router Mission Control scaffold.
 - `apps/worker`: typed event-bus worker scaffold.
 - `packages/contracts`: shared zod contracts for API/event payloads.
-- `packages/db`: SQLite migration + DAL starter.
+- `packages/db`: SQLite migration + DAL starter (`logs/clone_state_v2.db`).
 - `scripts/runtime_supervisor.mjs`: starts/stops v2 web + worker services.
 
 ## Default behavior
@@ -36,6 +36,8 @@ Tail v2 logs:
 ```bash
 CLONE_RUNTIME_STACK=v2 clone tail ui
 ```
+
+Worker heartbeat events are persisted to SQLite (`runs`, `run_events`, `kv_state`) to bootstrap v2 state durability.
 
 Stop v2 runtime:
 

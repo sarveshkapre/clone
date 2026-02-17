@@ -11,6 +11,7 @@
     "migrate": "tsx src/migrate.ts"
   },
   "dependencies": {
+    "@clone/contracts": "0.1.0",
     "better-sqlite3": "^11.9.0"
   },
   "devDependencies": {

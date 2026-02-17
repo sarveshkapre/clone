@@ -234,6 +234,8 @@ CLONE_RUNTIME_STACK=v2 clone start
 CLONE_RUNTIME_STACK=v2 clone status
 ```
 
+The v2 worker scaffold writes heartbeat/runtime events into SQLite (`logs/clone_state_v2.db`) via `packages/db`.
+
 Managed repo catalog files are optional for the Control Plane launcher.
 If no managed repos file exists, Clone auto-discovers local git repos from `Code Root`.
 
