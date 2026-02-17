@@ -32,7 +32,11 @@ from urllib.error import HTTPError, URLError
 
 RUN_STATUS_PATTERN = re.compile(r"run-(\d{8}-\d{6})-status\.txt$")
 CYCLE_PATTERN = re.compile(r"^--- Cycle (\d+) ---$")
+REPO_COUNT_PATTERN = re.compile(r"^Repo count: (\d+)$")
 REPO_FIELD_PATTERN = re.compile(r"\brepo=([^ ]+)")
+PASS_FIELD_PATTERN = re.compile(r"\bpass=([^ ]+)")
+PATH_FIELD_PATTERN = re.compile(r"\bpath=([^ ]+)")
+CWD_FIELD_PATTERN = re.compile(r"\bcwd=([^ ]+)")
 REASON_FIELD_PATTERN = re.compile(r"\breason=([^ ]+)")
 CYCLE_QUEUE_PATTERN = re.compile(
     r"^CYCLE_QUEUE cycle=(\d+) repos_seen=(\d+) spawned=(\d+) skipped_lock=(\d+)$"
@@ -175,6 +179,24 @@ def with_effective_run_fields(run: dict[str, Any] | None) -> dict[str, Any] | No
     payload["state"] = effective_state
     payload["run_online"] = run_is_online(effective_state, pid=run_pid, pid_alive_hint=run_pid_alive)
     payload["pid_alive"] = run_pid_alive
+    started_at = str(payload.get("started_at") or payload.get("run_started_at") or payload.get("first_ts") or "")
+    if started_at:
+        payload["started_at"] = started_at
+        payload["run_started_at"] = started_at
+    if not str(payload.get("ended_at") or "") and not payload["run_online"]:
+        ended_at = str(payload.get("last_ts") or payload.get("updated_at") or "")
+        if ended_at:
+            payload["ended_at"] = ended_at
+    repo_count = safe_int(payload.get("repo_count"), 0)
+    if repo_count <= 0:
+        latest_cycle_queue = payload.get("latest_cycle_queue") if isinstance(payload.get("latest_cycle_queue"), dict) else {}
+        repo_count = max(
+            safe_int(payload.get("repos_started"), 0),
+            safe_int(payload.get("repos_running"), 0),
+            safe_int(payload.get("repos_ended"), 0),
+            safe_int(latest_cycle_queue.get("repos_seen"), 0),
+        )
+    payload["repo_count"] = repo_count
     return payload
 
 
@@ -430,6 +452,7 @@ class RunSummary:
     updated_at: str
     status_run_log: str
     status_events_log: str
+    repo_count: int
     first_ts: str | None
     last_ts: str | None
     duration_seconds: int
@@ -447,16 +470,24 @@ class RunSummary:
     no_workers_events: int
     latest_no_workers_cycle: int
     repo_states: dict[str, str]
+    active_repo: str
+    active_path: str
+    active_pass: str
 
     def as_dict(self) -> dict[str, Any]:
+        started_at = self.run_started_at or self.first_ts or ""
+        ended_at = "" if run_is_online(self.state, pid=self.pid) else (self.last_ts or self.updated_at or "")
         return {
             "run_id": self.run_id,
             "pid": self.pid,
             "run_started_at": self.run_started_at,
+            "started_at": started_at,
+            "ended_at": ended_at,
             "state": self.state,
             "updated_at": self.updated_at,
             "status_run_log": self.status_run_log,
             "status_events_log": self.status_events_log,
+            "repo_count": self.repo_count,
             "first_ts": self.first_ts,
             "last_ts": self.last_ts,
             "duration_seconds": self.duration_seconds,
@@ -474,6 +505,9 @@ class RunSummary:
             "no_workers_events": self.no_workers_events,
             "latest_no_workers_cycle": self.latest_no_workers_cycle,
             "repo_states": self.repo_states,
+            "active_repo": self.active_repo,
+            "active_path": self.active_path,
+            "active_pass": self.active_pass,
         }
 
 
@@ -546,6 +580,7 @@ class CloneMonitor:
 
         cycles_seen = 0
         latest_cycle = 0
+        repo_count = safe_int(status_data.get("repo_count"), 0)
         repos_started = 0
         repos_running = 0
         repos_ended = 0
@@ -557,9 +592,17 @@ class CloneMonitor:
         no_workers_events = 0
         latest_no_workers_cycle = 0
         repo_states: dict[str, str] = {}
+        active_repo = str(status_data.get("repo") or "")
+        active_path = str(status_data.get("path") or "")
+        active_pass = str(status_data.get("pass") or "")
 
         for event in events:
             message = str(event.get("message", ""))
+
+            repo_count_match = REPO_COUNT_PATTERN.match(message)
+            if repo_count_match:
+                repo_count = max(repo_count, safe_int(repo_count_match.group(1), 0))
+                continue
 
             cycle_match = CYCLE_PATTERN.match(message)
             if cycle_match:
@@ -571,14 +614,25 @@ class CloneMonitor:
                 repos_started += 1
                 repo_match = REPO_FIELD_PATTERN.search(message)
                 if repo_match:
-                    repo_states[repo_match.group(1)] = "starting"
+                    active_repo = repo_match.group(1)
+                    repo_states[active_repo] = "starting"
+                path_match = PATH_FIELD_PATTERN.search(message)
+                if path_match:
+                    active_path = path_match.group(1)
                 continue
 
             if message.startswith("RUN repo="):
                 repos_running += 1
                 repo_match = REPO_FIELD_PATTERN.search(message)
                 if repo_match:
-                    repo_states[repo_match.group(1)] = "running"
+                    active_repo = repo_match.group(1)
+                    repo_states[active_repo] = "running"
+                cwd_match = CWD_FIELD_PATTERN.search(message)
+                if cwd_match:
+                    active_path = cwd_match.group(1)
+                pass_match = PASS_FIELD_PATTERN.search(message)
+                if pass_match:
+                    active_pass = pass_match.group(1)
                 continue
 
             if message.startswith("END repo="):
@@ -642,6 +696,7 @@ class CloneMonitor:
             updated_at=updated_at,
             status_run_log=status_run_log,
             status_events_log=status_events_log,
+            repo_count=repo_count,
             first_ts=first_ts,
             last_ts=last_ts,
             duration_seconds=duration_seconds,
@@ -659,6 +714,9 @@ class CloneMonitor:
             no_workers_events=no_workers_events,
             latest_no_workers_cycle=latest_no_workers_cycle,
             repo_states=repo_states,
+            active_repo=active_repo,
+            active_path=active_path,
+            active_pass=active_pass,
         )
 
         with self._cache_lock:
@@ -1991,6 +2049,32 @@ class RunController:
     def _all_loop_pids(self) -> list[int]:
         return [safe_int(item.get("pid"), 0) for item in self._all_loop_processes()]
 
+    def _run_worker_statuses(self, run_id: str) -> list[dict[str, Any]]:
+        if not run_id:
+            return []
+        worker_dir = self.logs_dir / f"run-{run_id}-workers"
+        if not worker_dir.exists() or not worker_dir.is_dir():
+            return []
+        workers: list[dict[str, Any]] = []
+        for worker_file in sorted(worker_dir.glob("worker-*.txt")):
+            data = read_key_value_file(worker_file)
+            worker_pid = safe_int(data.get("pid"), 0)
+            worker_alive = self._pid_alive(worker_pid)
+            workers.append(
+                {
+                    "pid": worker_pid,
+                    "pid_alive": worker_alive,
+                    "updated_at": str(data.get("updated_at") or ""),
+                    "state": str(data.get("state") or ""),
+                    "repo": str(data.get("repo") or ""),
+                    "path": str(data.get("path") or ""),
+                    "pass": str(data.get("pass") or ""),
+                    "file": str(worker_file),
+                }
+            )
+        workers.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+        return workers
+
     def _signal_pgid(self, pgid: int, sig: int) -> bool:
         if pgid <= 0:
             return False
@@ -2563,6 +2647,26 @@ class RunController:
         loop_processes = self._all_loop_processes()
         loop_pids = [safe_int(item.get("pid"), 0) for item in loop_processes]
         loop_group_ids = sorted({safe_int(item.get("pgid"), 0) for item in loop_processes if safe_int(item.get("pgid"), 0) > 0})
+        worker_statuses = self._run_worker_statuses(run_id)
+        active_worker = {}
+        for worker in worker_statuses:
+            if bool(worker.get("pid_alive")) and str(worker.get("state") or "").startswith("running"):
+                active_worker = worker
+                break
+        if not active_worker:
+            for worker in worker_statuses:
+                if bool(worker.get("pid_alive")):
+                    active_worker = worker
+                    break
+        if not active_worker and worker_statuses:
+            active_worker = worker_statuses[0]
+        active_repo = str(active_worker.get("repo") or (latest_run or {}).get("active_repo") or "")
+        active_path = str(active_worker.get("path") or (latest_run or {}).get("active_path") or "")
+        active_pass = str(active_worker.get("pass") or (latest_run or {}).get("active_pass") or "")
+        workers_running = 0
+        for worker in worker_statuses:
+            if bool(worker.get("pid_alive")) and str(worker.get("state") or "").startswith("running"):
+                workers_running += 1
 
         return {
             "active": active,
@@ -2584,6 +2688,11 @@ class RunController:
             "loop_group_ids": loop_group_ids,
             "loop_groups_count": len(loop_group_ids),
             "multiple_loops_detected": len(loop_group_ids) > 1,
+            "active_repo": active_repo,
+            "active_path": active_path,
+            "active_pass": active_pass,
+            "worker_count": len(worker_statuses),
+            "workers_running": workers_running,
         }
 
     def start_run(self, request: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -3713,15 +3822,25 @@ class APIHandler(SimpleHTTPRequestHandler):
         items: list[dict[str, Any]] = []
         for item in runs:
             run = with_effective_run_fields(item) or item
+            started_at = str(run.get("started_at") or run.get("run_started_at") or run.get("first_ts") or "")
+            repo_count = safe_int(run.get("repo_count"), 0)
+            if repo_count <= 0:
+                latest_cycle_queue = run.get("latest_cycle_queue") if isinstance(run.get("latest_cycle_queue"), dict) else {}
+                repo_count = max(
+                    safe_int(run.get("repos_started"), 0),
+                    safe_int(run.get("repos_running"), 0),
+                    safe_int(run.get("repos_ended"), 0),
+                    safe_int(latest_cycle_queue.get("repos_seen"), 0),
+                )
             items.append(
                 {
                     "id": str(run.get("run_id") or ""),
                     "state": str(run.get("state") or "unknown"),
                     "state_raw": str(run.get("state_raw") or run.get("state") or "unknown"),
-                    "started_at": str(run.get("started_at") or ""),
+                    "started_at": started_at,
                     "ended_at": str(run.get("ended_at") or ""),
                     "duration_seconds": safe_int(run.get("duration_seconds"), 0),
-                    "repo_count": safe_int(run.get("repo_count"), 0),
+                    "repo_count": repo_count,
                     "repos_changed": safe_int(run.get("repos_changed_est"), 0),
                     "repos_no_change": safe_int(run.get("repos_no_change"), 0),
                     "run_online": bool(run.get("run_online")),
@@ -3791,17 +3910,37 @@ class APIHandler(SimpleHTTPRequestHandler):
         if not run_id:
             run_payload: dict[str, Any] | None = None
         else:
+            started_at = str(latest.get("started_at") or latest.get("run_started_at") or latest.get("first_ts") or "")
+            repo_count = safe_int(latest.get("repo_count"), 0)
+            selected_repos_count = safe_int(
+                (status.get("managed_settings") if isinstance(status.get("managed_settings"), dict) else {}).get(
+                    "selected_repos_count"
+                ),
+                0,
+            )
+            if repo_count <= 0:
+                latest_cycle_queue = latest.get("latest_cycle_queue") if isinstance(latest.get("latest_cycle_queue"), dict) else {}
+                repo_count = max(
+                    selected_repos_count,
+                    safe_int(latest.get("repos_started"), 0),
+                    safe_int(latest.get("repos_running"), 0),
+                    safe_int(latest.get("repos_ended"), 0),
+                    safe_int(latest_cycle_queue.get("repos_seen"), 0),
+                )
             run_payload = {
                 "id": run_id,
                 "state": str(status.get("run_state") or "unknown"),
                 "state_raw": str(status.get("run_state_raw") or status.get("run_state") or "unknown"),
-                "started_at": str(latest.get("started_at") or ""),
+                "started_at": started_at,
                 "ended_at": str(latest.get("ended_at") or ""),
                 "duration_seconds": safe_int(latest.get("duration_seconds"), 0),
-                "repo_count": safe_int(latest.get("repo_count"), 0),
+                "repo_count": repo_count,
                 "repos_changed": safe_int(latest.get("repos_changed_est"), 0),
                 "repos_no_change": safe_int(latest.get("repos_no_change"), 0),
                 "run_online": bool(status.get("active")),
+                "repo": str(status.get("active_repo") or latest.get("active_repo") or ""),
+                "path": str(status.get("active_path") or latest.get("active_path") or ""),
+                "pass": str(status.get("active_pass") or latest.get("active_pass") or ""),
             }
         return {
             "active": bool(status.get("active")),

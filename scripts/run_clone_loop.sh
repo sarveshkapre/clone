@@ -70,6 +70,8 @@ DISCOVER_REPOS_SCRIPT="${DISCOVER_REPOS_SCRIPT:-$SCRIPT_DIR/discover_active_repo
 
 mkdir -p "$LOG_DIR"
 RUN_ID="$(date +%Y%m%d-%H%M%S)"
+RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+RUN_PID="$$"
 RUN_LOG="$LOG_DIR/run-${RUN_ID}.log"
 EVENTS_LOG="$LOG_DIR/run-${RUN_ID}-events.log"
 STATUS_FILE="$LOG_DIR/run-${RUN_ID}-status.txt"
@@ -608,7 +610,8 @@ update_status() {
   updated_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   cat >"$STATUS_FILE" <<EOF
 run_id: $RUN_ID
-pid: $$
+run_started_at: $RUN_STARTED_AT
+pid: $RUN_PID
 updated_at: $updated_at
 state: $state
 repo: $repo
@@ -648,6 +651,7 @@ set_status() {
   local pass="${4:-}"
   if (( PARALLEL_REPOS > 1 )); then
     update_worker_status "$state" "$repo" "$path" "$pass"
+    update_status "$state" "$repo" "$path" "$pass"
   else
     update_status "$state" "$repo" "$path" "$pass"
   fi
