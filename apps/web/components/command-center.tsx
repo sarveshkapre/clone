@@ -76,6 +76,16 @@ type ParsedQueueIntent = {
   parsed: boolean;
 };
 
+type LocalLauncherPrefs = {
+  selectedRepoPaths?: string[];
+  parallelRepos?: number;
+  maxCycles?: number;
+  tasksPerRepo?: number;
+  codeRoot?: string;
+};
+
+const LAUNCHER_PREFS_KEY = "clone.command-center.launcher.v1";
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -139,6 +149,7 @@ export function CommandCenter() {
 
   const [busyAction, setBusyAction] = useState<string>("");
   const [message, setMessage] = useState<string>("");
+  const [hasLocalPrefs, setHasLocalPrefs] = useState(false);
 
   const activeRunId = useMemo(() => {
     const fromActive = String(activeRun?.run?.id || "").trim();
@@ -206,6 +217,7 @@ export function CommandCenter() {
     const first = Array.isArray(payload.items) ? payload.items[0] : null;
     if (!first) return;
     setPreset(first);
+    if (hasLocalPrefs) return;
     setParallelRepos(Number(first.parallel_repos || 5));
     setMaxCycles(Number(first.max_cycles || 30));
     setTasksPerRepo(Number(first.tasks_per_repo || 0));
@@ -213,7 +225,7 @@ export function CommandCenter() {
     if (Array.isArray(first.selected_repos) && first.selected_repos.length > 0) {
       setSelectedRepoPaths(first.selected_repos.map((repo) => repo.path).filter(Boolean));
     }
-  }, []);
+  }, [hasLocalPrefs]);
 
   const loadDiagnostics = useCallback(async () => {
     const payload = await apiRequest<LaunchDiagnostics>("/api/v1/system/launch-diagnostics");
@@ -334,6 +346,39 @@ export function CommandCenter() {
       return preferred.length > 0 ? preferred : current;
     });
   }, [preset]);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(LAUNCHER_PREFS_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as LocalLauncherPrefs;
+      if (Array.isArray(parsed.selectedRepoPaths) && parsed.selectedRepoPaths.length > 0) {
+        setSelectedRepoPaths(parsed.selectedRepoPaths.filter(Boolean));
+      }
+      if (Number.isFinite(parsed.parallelRepos)) setParallelRepos(Number(parsed.parallelRepos));
+      if (Number.isFinite(parsed.maxCycles)) setMaxCycles(Number(parsed.maxCycles));
+      if (Number.isFinite(parsed.tasksPerRepo)) setTasksPerRepo(Number(parsed.tasksPerRepo));
+      if (typeof parsed.codeRoot === "string") setCodeRoot(parsed.codeRoot);
+      setHasLocalPrefs(true);
+    } catch {
+      // Ignore invalid local storage state.
+    }
+  }, []);
+
+  useEffect(() => {
+    const payload: LocalLauncherPrefs = {
+      selectedRepoPaths,
+      parallelRepos,
+      maxCycles,
+      tasksPerRepo,
+      codeRoot,
+    };
+    try {
+      window.localStorage.setItem(LAUNCHER_PREFS_KEY, JSON.stringify(payload));
+    } catch {
+      // Ignore local storage write failures.
+    }
+  }, [codeRoot, maxCycles, parallelRepos, selectedRepoPaths, tasksPerRepo]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
