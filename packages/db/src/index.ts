@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import type { RunEvent } from "@clone/contracts";
 
 export type CloneDb = Database.Database;
 
 function readMigrationSql(): string {
-  const filePath = path.resolve(process.cwd(), "packages/db/src/migrations/0001_init.sql");
+  const filePath = fileURLToPath(new URL("./migrations/0001_init.sql", import.meta.url));
   return fs.readFileSync(filePath, "utf8");
 }
 

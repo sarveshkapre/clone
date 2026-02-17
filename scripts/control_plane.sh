@@ -11,6 +11,10 @@ STOP_TIMEOUT_SECONDS="${STOP_TIMEOUT_SECONDS:-10}"
 TAIL_LINES="${TAIL_LINES:-200}"
 RUNTIME_STACK="${CLONE_RUNTIME_STACK:-v1}"
 RUNTIME_SUPERVISOR_SCRIPT="$CLONE_ROOT/scripts/runtime_supervisor.mjs"
+V2_API_BASE_URL="${CLONE_V2_API_BASE_URL:-}"
+V2_API_HOST="${CLONE_V2_API_HOST:-127.0.0.1}"
+V2_API_PORT="${CLONE_V2_API_PORT:-${CLONE_CONTROL_PLANE_PORT:-8787}}"
+V2_WEB_PORT="${CLONE_V2_WEB_PORT:-3000}"
 
 LOGS_DIR_INPUT="${CLONE_LOGS_DIR:-logs}"
 if [[ "$LOGS_DIR_INPUT" = /* ]]; then
@@ -54,6 +58,10 @@ Environment overrides:
   CLONE_CONTROL_PLANE_PORT    (default: 8787)
   CLONE_LOGS_DIR              (default: logs)
   CLONE_RUNTIME_STACK         (default: v1; set to v2 for dark-launch Next.js+worker runtime)
+  CLONE_V2_API_BASE_URL       (optional; use external API backend instead of bundled Python API)
+  CLONE_V2_API_HOST           (default: 127.0.0.1 for bundled v2 API)
+  CLONE_V2_API_PORT           (default: CLONE_CONTROL_PLANE_PORT or 8787)
+  CLONE_V2_WEB_PORT           (default: 3000)
   CLONE_CONTROL_PLANE_LOG     (default: logs/control-plane-ui.log)
   CLONE_CONTROL_PLANE_PID_FILE(default: logs/control-plane-ui-<port>.pid)
   REPOS_FILE                  (optional; default: repos.runtime.yaml)
@@ -171,8 +179,19 @@ runtime_v2_precheck() {
   local ok=0
   require_cmd node || ok=1
   require_cmd npm || ok=1
+  if [[ -z "$V2_API_BASE_URL" ]]; then
+    require_cmd "$PYTHON_BIN" || ok=1
+    if [[ ! -f "$SERVER_SCRIPT" ]]; then
+      echo "Missing server script for v2 bundled API: $SERVER_SCRIPT" >&2
+      ok=1
+    fi
+  fi
   if [[ ! -f "$RUNTIME_SUPERVISOR_SCRIPT" ]]; then
     echo "Missing runtime supervisor script: $RUNTIME_SUPERVISOR_SCRIPT" >&2
+    ok=1
+  fi
+  if [[ ! -d "$CLONE_ROOT/node_modules" ]]; then
+    echo "Missing node_modules in $CLONE_ROOT. Run: npm install" >&2
     ok=1
   fi
   mkdir -p "$LOGS_DIR" || {
@@ -185,6 +204,12 @@ runtime_v2_precheck() {
   echo "Precheck OK (runtime_stack=v2)"
   echo "clone_root=$CLONE_ROOT"
   echo "runtime_supervisor=$RUNTIME_SUPERVISOR_SCRIPT"
+  if [[ -n "$V2_API_BASE_URL" ]]; then
+    echo "api_base_url=$V2_API_BASE_URL (external)"
+  else
+    echo "api_base_url=http://$V2_API_HOST:$V2_API_PORT (bundled)"
+  fi
+  echo "web_url=http://127.0.0.1:$V2_WEB_PORT"
   echo "logs_dir=$LOGS_DIR"
 }
 

@@ -13,7 +13,14 @@ const logsDir = path.isAbsolute(logsDirInput) ? logsDirInput : path.resolve(clon
 const supervisorPidFile = path.join(logsDir, "clone-runtime-v2-supervisor.pid");
 const stateFile = path.join(logsDir, "clone-runtime-v2-state.json");
 const runtimeLogFile = path.join(logsDir, "clone-runtime-v2.log");
+const controlPlaneScript = path.resolve(cloneRoot, "apps/control_plane/server.py");
+const pythonBin = process.env.PYTHON_BIN || "python3";
+const apiHost = process.env.CLONE_V2_API_HOST || "127.0.0.1";
+const apiPort = Number(process.env.CLONE_V2_API_PORT || process.env.CLONE_CONTROL_PLANE_PORT || 8787);
+const externalApiBaseUrl = process.env.CLONE_V2_API_BASE_URL?.trim() || "";
+const apiBaseUrl = externalApiBaseUrl || `http://${apiHost}:${apiPort}`;
 const webPort = Number(process.env.CLONE_V2_WEB_PORT || 3000);
+const stateDbPath = process.env.CLONE_STATE_DB || path.resolve(cloneRoot, "logs/clone_state_v2.db");
 const command = String(process.argv[2] || "status").trim().toLowerCase();
 
 function ensureLogsDir() {
@@ -63,18 +70,45 @@ function removePid() {
 }
 
 function childSpecs() {
-  return [
+  const specs = [
+    ...(externalApiBaseUrl
+      ? []
+      : [
+          {
+            id: "api",
+            cmd: pythonBin,
+            args: [
+              controlPlaneScript,
+              "--host",
+              apiHost,
+              "--port",
+              String(apiPort),
+              "--clone-root",
+              cloneRoot,
+              "--logs-dir",
+              logsDir,
+            ],
+          },
+        ]),
     {
       id: "web",
       cmd: "npm",
       args: ["run", "dev", "--workspace", "@clone/web", "--", "--hostname", "127.0.0.1", "--port", String(webPort)],
+      env: {
+        CLONE_V2_API_BASE_URL: apiBaseUrl,
+      },
     },
     {
       id: "worker",
       cmd: "npm",
       args: ["run", "dev", "--workspace", "@clone/worker"],
+      env: {
+        CLONE_V2_API_BASE_URL: apiBaseUrl,
+        CLONE_STATE_DB: stateDbPath,
+      },
     },
   ];
+  return specs;
 }
 
 function printStatus() {
@@ -93,6 +127,7 @@ function printStatus() {
   console.log(`logs_dir=${logsDir}`);
   console.log(`supervisor_pid=${supervisorPid || "-"}`);
   console.log(`supervisor_state=${supervisorAlive ? "running" : "stopped"}`);
+  console.log(`api_url=${apiBaseUrl}`);
   console.log(`web_url=http://127.0.0.1:${webPort}`);
   if (enrichedChildren.length) {
     for (const child of enrichedChildren) {
@@ -208,7 +243,10 @@ function runSupervisor() {
   for (const spec of childSpecs()) {
     const child = spawn(spec.cmd, spec.args, {
       cwd: cloneRoot,
-      env: process.env,
+      env: {
+        ...process.env,
+        ...(spec.env || {}),
+      },
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
     });

@@ -235,6 +235,7 @@ CLONE_RUNTIME_STACK=v2 clone status
 ```
 
 The v2 worker scaffold writes heartbeat/runtime events into SQLite (`logs/clone_state_v2.db`) via `packages/db`.
+By default v2 starts bundled API + web + worker (`api:8787`, `web:3000`). Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 Managed repo catalog files are optional for the Control Plane launcher.
 If no managed repos file exists, Clone auto-discovers local git repos from `Code Root`.
