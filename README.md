@@ -226,6 +226,14 @@ npm run clone:start
 npm run clone:status
 ```
 
+Dark-launch runtime scaffold (Next.js web + worker) is available behind an explicit flag:
+
+```bash
+CLONE_RUNTIME_STACK=v2 clone precheck
+CLONE_RUNTIME_STACK=v2 clone start
+CLONE_RUNTIME_STACK=v2 clone status
+```
+
 Managed repo catalog files are optional for the Control Plane launcher.
 If no managed repos file exists, Clone auto-discovers local git repos from `Code Root`.
 
@@ -245,10 +253,12 @@ Tail helper:
 ```
 
 More details: `apps/control_plane/README.md`
+Dark-launch runtime details: `docs/runtime-v2-dark-launch.md`
 
 Highlights:
 - live alerts + toasts
-- run controls (`start` / `stop` / `restart`)
+- run controls (`start` / `stop` / `force stop` / `restart`) with route-level quick controls
+- launch diagnostics panel (`/api/system/launch_diagnostics`) for startup and log-path verification
 - GitHub onboarding in Run Launcher: fetch your own repos via `gh`, import selected repos into any code root, and auto-upsert catalog entries
 - local repo onboarding in Run Launcher: scan selected `Code Root` and include all discovered git repos (no hardcoded repo list)
 - duplicate-loop normalization (`Normalize Loops`)

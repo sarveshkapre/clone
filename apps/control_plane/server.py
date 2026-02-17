@@ -3492,6 +3492,17 @@ class APIHandler(SimpleHTTPRequestHandler):
             "recent_log_errors": error_lines[-20:],
         }
 
+    def _v1_system_status_payload(self) -> dict[str, Any]:
+        status = self.controller.status_payload()
+        return {
+            "active": bool(status.get("active")),
+            "run_state": str(status.get("run_state") or "unknown"),
+            "run_state_raw": str(status.get("run_state_raw") or ""),
+            "run_id": str(status.get("run_id") or ""),
+            "run_pid": safe_int(status.get("run_pid"), 0),
+            "updated_at": iso_utc(utc_now()),
+        }
+
     def _read_json_body(self) -> dict[str, Any]:
         raw_len = safe_int(self.headers.get("Content-Length"), 0)
         if raw_len <= 0:
@@ -3585,6 +3596,14 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         if normalized_path == "/api/health":
             self._send_json({"ok": True, "time": iso_utc(utc_now())})
+            return
+
+        if normalized_path == "/api/v1/system/status":
+            self._send_json(self._v1_system_status_payload())
+            return
+
+        if normalized_path in {"/api/v1/system/launch-diagnostics", "/api/v1/system/launch_diagnostics"}:
+            self._send_json(self._launch_diagnostics_payload())
             return
 
         if normalized_path in {"/api/launch_diagnostics", "/api/system/launch_diagnostics"}:

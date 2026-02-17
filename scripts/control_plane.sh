@@ -9,6 +9,8 @@ PORT="${CLONE_CONTROL_PLANE_PORT:-8787}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 STOP_TIMEOUT_SECONDS="${STOP_TIMEOUT_SECONDS:-10}"
 TAIL_LINES="${TAIL_LINES:-200}"
+RUNTIME_STACK="${CLONE_RUNTIME_STACK:-v1}"
+RUNTIME_SUPERVISOR_SCRIPT="$CLONE_ROOT/scripts/runtime_supervisor.mjs"
 
 LOGS_DIR_INPUT="${CLONE_LOGS_DIR:-logs}"
 if [[ "$LOGS_DIR_INPUT" = /* ]]; then
@@ -51,6 +53,7 @@ Environment overrides:
   CLONE_CONTROL_PLANE_HOST    (default: 127.0.0.1)
   CLONE_CONTROL_PLANE_PORT    (default: 8787)
   CLONE_LOGS_DIR              (default: logs)
+  CLONE_RUNTIME_STACK         (default: v1; set to v2 for dark-launch Next.js+worker runtime)
   CLONE_CONTROL_PLANE_LOG     (default: logs/control-plane-ui.log)
   CLONE_CONTROL_PLANE_PID_FILE(default: logs/control-plane-ui-<port>.pid)
   REPOS_FILE                  (optional; default: repos.runtime.yaml)
@@ -158,6 +161,39 @@ port_in_use_by_non_control_plane() {
     fi
   done < <(lsof -nP -t -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | awk '!seen[$0]++')
   return 1
+}
+
+runtime_v2_enabled() {
+  [[ "$RUNTIME_STACK" == "v2" ]]
+}
+
+runtime_v2_precheck() {
+  local ok=0
+  require_cmd node || ok=1
+  require_cmd npm || ok=1
+  if [[ ! -f "$RUNTIME_SUPERVISOR_SCRIPT" ]]; then
+    echo "Missing runtime supervisor script: $RUNTIME_SUPERVISOR_SCRIPT" >&2
+    ok=1
+  fi
+  mkdir -p "$LOGS_DIR" || {
+    echo "Unable to create logs directory: $LOGS_DIR" >&2
+    ok=1
+  }
+  if (( ok != 0 )); then
+    return 1
+  fi
+  echo "Precheck OK (runtime_stack=v2)"
+  echo "clone_root=$CLONE_ROOT"
+  echo "runtime_supervisor=$RUNTIME_SUPERVISOR_SCRIPT"
+  echo "logs_dir=$LOGS_DIR"
+}
+
+runtime_v2_exec() {
+  local action="$1"
+  (
+    cd "$CLONE_ROOT"
+    CLONE_ROOT="$CLONE_ROOT" CLONE_LOGS_DIR="$LOGS_DIR" node "$RUNTIME_SUPERVISOR_SCRIPT" "$action"
+  )
 }
 
 precheck() {
@@ -337,6 +373,18 @@ restart() {
 
 tail_logs() {
   local target="${1:-ui}" file=""
+  if runtime_v2_enabled; then
+    case "$target" in
+      ui|runtime)
+        file="$LOGS_DIR/clone-runtime-v2.log"
+        ;;
+      *)
+        echo "Unknown tail target for runtime v2: $target" >&2
+        echo "Expected: ui | runtime" >&2
+        return 1
+        ;;
+    esac
+  else
   case "$target" in
     ui)
       file="$UI_LOG"
@@ -356,6 +404,7 @@ tail_logs() {
       return 1
       ;;
   esac
+  fi
 
   if [[ -z "$file" ]]; then
     echo "No log file found for target: $target" >&2
@@ -367,6 +416,30 @@ tail_logs() {
 }
 
 cmd="${1:-help}"
+if runtime_v2_enabled; then
+  case "$cmd" in
+    precheck)
+      runtime_v2_precheck
+      ;;
+    start|stop|status|restart)
+      runtime_v2_precheck
+      runtime_v2_exec "$cmd"
+      ;;
+    tail)
+      tail_logs "${2:-ui}"
+      ;;
+    help|-h|--help)
+      usage
+      ;;
+    *)
+      echo "Unknown command: $cmd" >&2
+      usage
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+
 case "$cmd" in
   precheck)
     precheck
