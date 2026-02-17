@@ -1776,6 +1776,31 @@ function clearNode(node) {
   while (node.firstChild) node.removeChild(node.firstChild);
 }
 
+function captureTableWrapScroll(tbodyElement) {
+  const host = tbodyElement?.closest?.(".table-wrap");
+  if (!host) return null;
+  return {
+    host,
+    scrollTop: Number(host.scrollTop || 0),
+    scrollLeft: Number(host.scrollLeft || 0),
+  };
+}
+
+function restoreTableWrapScroll(snapshot) {
+  if (!snapshot?.host) return;
+  snapshot.host.scrollTop = Number(snapshot.scrollTop || 0);
+  snapshot.host.scrollLeft = Number(snapshot.scrollLeft || 0);
+}
+
+function withPreservedTableScroll(tbodyElement, renderFn) {
+  const snapshot = captureTableWrapScroll(tbodyElement);
+  try {
+    return renderFn();
+  } finally {
+    restoreTableWrapScroll(snapshot);
+  }
+}
+
 function createMetricCard(label, value, detail = "", options = {}) {
   const card = document.createElement("article");
   card.className = "metric-card";
@@ -4991,122 +5016,124 @@ function setStartRunGithubBusy(busy) {
 }
 
 function renderStartRunGithubRepoTable() {
-  clearNode(elements.startRunGithubRepoTable);
-  const status = state.githubStatus || {};
-  const rows = filteredGithubRepoCatalog();
-  const total = (state.githubRepoCatalog || []).length;
-  const selected = selectedGithubReposFromModal().length;
+  withPreservedTableScroll(elements.startRunGithubRepoTable, () => {
+    clearNode(elements.startRunGithubRepoTable);
+    const status = state.githubStatus || {};
+    const rows = filteredGithubRepoCatalog();
+    const total = (state.githubRepoCatalog || []).length;
+    const selected = selectedGithubReposFromModal().length;
 
-  if (!status.gh_available) {
-    elements.startRunGithubMeta.textContent = "GitHub CLI not installed; local catalog still works.";
-  } else if (!status.authenticated) {
-    elements.startRunGithubMeta.textContent = "Run `gh auth login` to fetch your GitHub repositories.";
-  } else {
-    const owner = String(status.login || "unknown");
-    elements.startRunGithubMeta.textContent = `${selected}/${total} selected • owner ${owner}`;
-  }
-
-  if (state.githubBusy) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 5;
-    cell.className = "muted";
-    cell.textContent = "Loading GitHub repositories...";
-    row.appendChild(cell);
-    elements.startRunGithubRepoTable.appendChild(row);
-    return;
-  }
-
-  if (!status.gh_available) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 5;
-    cell.className = "muted";
-    cell.textContent = "Install `gh` to fetch repositories directly from GitHub.";
-    row.appendChild(cell);
-    elements.startRunGithubRepoTable.appendChild(row);
-    return;
-  }
-
-  if (!status.authenticated) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 5;
-    cell.className = "muted";
-    cell.textContent = "GitHub not authenticated. Run `gh auth login` in your terminal.";
-    row.appendChild(cell);
-    elements.startRunGithubRepoTable.appendChild(row);
-    return;
-  }
-
-  if (!rows.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 5;
-    cell.className = "muted";
-    cell.textContent = total ? "No GitHub repos match your search." : "No GitHub repos loaded yet.";
-    row.appendChild(cell);
-    elements.startRunGithubRepoTable.appendChild(row);
-    return;
-  }
-
-  rows.forEach((repo) => {
-    const key = githubRepoKey(repo);
-    const selection = state.githubSelection[key] || { enabled: false };
-    const row = document.createElement("tr");
-    row.classList.toggle("selected", Boolean(selection.enabled));
-
-    const setSelection = (enabled) => {
-      state.githubSelection[key] = { enabled: Boolean(enabled) };
-      row.classList.toggle("selected", Boolean(enabled));
-      renderStartRunGithubRepoTable();
-    };
-
-    const useCell = document.createElement("td");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = Boolean(selection.enabled);
-    checkbox.addEventListener("change", () => {
-      setSelection(Boolean(checkbox.checked));
-    });
-    useCell.appendChild(checkbox);
-
-    const repoCell = document.createElement("td");
-    repoCell.className = "mono";
-    repoCell.textContent = repo.name_with_owner;
-    repoCell.title = repo.description || repo.path_candidate || "";
-
-    const visibilityCell = document.createElement("td");
-    visibilityCell.textContent = repo.is_private ? "private" : "public";
-
-    const statusCell = document.createElement("td");
-    if (repo.in_catalog) {
-      statusCell.textContent = "managed";
-    } else if (repo.local_exists) {
-      statusCell.textContent = "local only";
+    if (!status.gh_available) {
+      elements.startRunGithubMeta.textContent = "GitHub CLI not installed; local catalog still works.";
+    } else if (!status.authenticated) {
+      elements.startRunGithubMeta.textContent = "Run `gh auth login` to fetch your GitHub repositories.";
     } else {
-      statusCell.textContent = "remote";
+      const owner = String(status.login || "unknown");
+      elements.startRunGithubMeta.textContent = `${selected}/${total} selected • owner ${owner}`;
     }
 
-    const updatedCell = document.createElement("td");
-    updatedCell.textContent = formatUtc(repo.updated_at || "");
+    if (state.githubBusy) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 5;
+      cell.className = "muted";
+      cell.textContent = "Loading GitHub repositories...";
+      row.appendChild(cell);
+      elements.startRunGithubRepoTable.appendChild(row);
+      return;
+    }
 
-    row.addEventListener("click", (event) => {
-      if (event.target instanceof HTMLInputElement) return;
-      event.preventDefault();
-      setSelection(!Boolean(state.githubSelection[key]?.enabled));
-    });
-    row.tabIndex = 0;
-    row.setAttribute("role", "button");
-    row.addEventListener("keydown", (event) => {
-      const keyName = String(event.key || "");
-      if (keyName === "Enter" || keyName === " ") {
+    if (!status.gh_available) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 5;
+      cell.className = "muted";
+      cell.textContent = "Install `gh` to fetch repositories directly from GitHub.";
+      row.appendChild(cell);
+      elements.startRunGithubRepoTable.appendChild(row);
+      return;
+    }
+
+    if (!status.authenticated) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 5;
+      cell.className = "muted";
+      cell.textContent = "GitHub not authenticated. Run `gh auth login` in your terminal.";
+      row.appendChild(cell);
+      elements.startRunGithubRepoTable.appendChild(row);
+      return;
+    }
+
+    if (!rows.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 5;
+      cell.className = "muted";
+      cell.textContent = total ? "No GitHub repos match your search." : "No GitHub repos loaded yet.";
+      row.appendChild(cell);
+      elements.startRunGithubRepoTable.appendChild(row);
+      return;
+    }
+
+    rows.forEach((repo) => {
+      const key = githubRepoKey(repo);
+      const selection = state.githubSelection[key] || { enabled: false };
+      const row = document.createElement("tr");
+      row.classList.toggle("selected", Boolean(selection.enabled));
+
+      const setSelection = (enabled) => {
+        state.githubSelection[key] = { enabled: Boolean(enabled) };
+        row.classList.toggle("selected", Boolean(enabled));
+        renderStartRunGithubRepoTable();
+      };
+
+      const useCell = document.createElement("td");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = Boolean(selection.enabled);
+      checkbox.addEventListener("change", () => {
+        setSelection(Boolean(checkbox.checked));
+      });
+      useCell.appendChild(checkbox);
+
+      const repoCell = document.createElement("td");
+      repoCell.className = "mono";
+      repoCell.textContent = repo.name_with_owner;
+      repoCell.title = repo.description || repo.path_candidate || "";
+
+      const visibilityCell = document.createElement("td");
+      visibilityCell.textContent = repo.is_private ? "private" : "public";
+
+      const statusCell = document.createElement("td");
+      if (repo.in_catalog) {
+        statusCell.textContent = "managed";
+      } else if (repo.local_exists) {
+        statusCell.textContent = "local only";
+      } else {
+        statusCell.textContent = "remote";
+      }
+
+      const updatedCell = document.createElement("td");
+      updatedCell.textContent = formatUtc(repo.updated_at || "");
+
+      row.addEventListener("click", (event) => {
+        if (event.target instanceof HTMLInputElement) return;
         event.preventDefault();
         setSelection(!Boolean(state.githubSelection[key]?.enabled));
-      }
+      });
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.addEventListener("keydown", (event) => {
+        const keyName = String(event.key || "");
+        if (keyName === "Enter" || keyName === " ") {
+          event.preventDefault();
+          setSelection(!Boolean(state.githubSelection[key]?.enabled));
+        }
+      });
+      row.append(useCell, repoCell, visibilityCell, statusCell, updatedCell);
+      elements.startRunGithubRepoTable.appendChild(row);
     });
-    row.append(useCell, repoCell, visibilityCell, statusCell, updatedCell);
-    elements.startRunGithubRepoTable.appendChild(row);
   });
 }
 
@@ -5349,151 +5376,153 @@ function setStartRunModalOpen(open) {
 }
 
 function renderStartRunRepoTable() {
-  clearNode(elements.startRunRepoTable);
-  const rows = filteredStartRunCatalog();
-  const customMode = state.startRunMode === "custom";
-  const selectedCount = selectedReposFromModal().length;
-  const total = (state.repoCatalog || []).length;
-  elements.startRunRepoCountMeta.textContent = `${selectedCount}/${total} repos selected • mode ${customMode ? "custom" : "auto"}`;
-  elements.startRunModeAuto.checked = !customMode;
-  elements.startRunModeCustom.checked = customMode;
-  elements.startRunSelectAllBtn.disabled = false;
-  elements.startRunSelectNoneBtn.disabled = false;
+  withPreservedTableScroll(elements.startRunRepoTable, () => {
+    clearNode(elements.startRunRepoTable);
+    const rows = filteredStartRunCatalog();
+    const customMode = state.startRunMode === "custom";
+    const selectedCount = selectedReposFromModal().length;
+    const total = (state.repoCatalog || []).length;
+    elements.startRunRepoCountMeta.textContent = `${selectedCount}/${total} repos selected • mode ${customMode ? "custom" : "auto"}`;
+    elements.startRunModeAuto.checked = !customMode;
+    elements.startRunModeCustom.checked = customMode;
+    elements.startRunSelectAllBtn.disabled = false;
+    elements.startRunSelectNoneBtn.disabled = false;
 
-  if (!rows.length) {
-    const row = document.createElement("tr");
-    const cell = document.createElement("td");
-    cell.colSpan = 6;
-    cell.className = "muted";
-    cell.textContent = "No repositories match your search.";
-    row.appendChild(cell);
-    elements.startRunRepoTable.appendChild(row);
-    return;
-  }
+    if (!rows.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 6;
+      cell.className = "muted";
+      cell.textContent = "No repositories match your search.";
+      row.appendChild(cell);
+      elements.startRunRepoTable.appendChild(row);
+      return;
+    }
 
-  rows.forEach((repo) => {
-    const key = repoCatalogKey(repo);
-    const selection = state.startRunSelection[key] || {
-      enabled: true,
-      tasks_per_repo: 0,
-      max_cycles_per_run: 0,
-      max_commits_per_run: 0,
-    };
-    const setSelection = (patch = {}) => {
-      const currentSelection = state.startRunSelection[key] || selection;
-      state.startRunSelection[key] = {
-        ...currentSelection,
-        ...patch,
+    rows.forEach((repo) => {
+      const key = repoCatalogKey(repo);
+      const selection = state.startRunSelection[key] || {
+        enabled: true,
+        tasks_per_repo: 0,
+        max_cycles_per_run: 0,
+        max_commits_per_run: 0,
       };
-    };
+      const setSelection = (patch = {}) => {
+        const currentSelection = state.startRunSelection[key] || selection;
+        state.startRunSelection[key] = {
+          ...currentSelection,
+          ...patch,
+        };
+      };
 
-    const row = document.createElement("tr");
+      const row = document.createElement("tr");
 
-    const useCell = document.createElement("td");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = Boolean(selection.enabled);
-    checkbox.disabled = false;
-    checkbox.addEventListener("change", () => {
-      if (!customMode) {
-        setStartRunMode("custom");
-      }
-      setSelection({
-        enabled: Boolean(checkbox.checked),
+      const useCell = document.createElement("td");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = Boolean(selection.enabled);
+      checkbox.disabled = false;
+      checkbox.addEventListener("change", () => {
+        if (!customMode) {
+          setStartRunMode("custom");
+        }
+        setSelection({
+          enabled: Boolean(checkbox.checked),
+        });
+        renderStartRunRepoTable();
       });
-      renderStartRunRepoTable();
-    });
-    useCell.appendChild(checkbox);
+      useCell.appendChild(checkbox);
 
-    const repoCell = document.createElement("td");
-    repoCell.className = "mono";
-    repoCell.textContent = repo.name || "-";
-    repoCell.title = repo.path || "";
+      const repoCell = document.createElement("td");
+      repoCell.className = "mono";
+      repoCell.textContent = repo.name || "-";
+      repoCell.title = repo.path || "";
 
-    const branchCell = document.createElement("td");
-    branchCell.textContent = repo.branch || "main";
+      const branchCell = document.createElement("td");
+      branchCell.textContent = repo.branch || "main";
 
-    const tasksCell = document.createElement("td");
-    const tasksInput = document.createElement("input");
-    tasksInput.type = "number";
-    tasksInput.min = "0";
-    tasksInput.max = "1000";
-    tasksInput.value = String(clampInt(selection.tasks_per_repo, 0, 0, 1000));
-    tasksInput.disabled = !customMode || !selection.enabled;
-    tasksInput.addEventListener("change", () => {
-      if (!customMode) return;
-      setSelection({
-        enabled: true,
-        tasks_per_repo: clampInt(tasksInput.value, 0, 0, 1000),
+      const tasksCell = document.createElement("td");
+      const tasksInput = document.createElement("input");
+      tasksInput.type = "number";
+      tasksInput.min = "0";
+      tasksInput.max = "1000";
+      tasksInput.value = String(clampInt(selection.tasks_per_repo, 0, 0, 1000));
+      tasksInput.disabled = !customMode || !selection.enabled;
+      tasksInput.addEventListener("change", () => {
+        if (!customMode) return;
+        setSelection({
+          enabled: true,
+          tasks_per_repo: clampInt(tasksInput.value, 0, 0, 1000),
+        });
       });
-    });
-    tasksCell.appendChild(tasksInput);
+      tasksCell.appendChild(tasksInput);
 
-    const maxCyclesCell = document.createElement("td");
-    const maxCyclesInput = document.createElement("input");
-    maxCyclesInput.type = "number";
-    maxCyclesInput.min = "0";
-    maxCyclesInput.max = "10000";
-    maxCyclesInput.value = String(clampInt(selection.max_cycles_per_run, 0, 0, 10000));
-    maxCyclesInput.disabled = !customMode || !selection.enabled;
-    maxCyclesInput.addEventListener("change", () => {
-      if (!customMode) return;
-      setSelection({
-        enabled: true,
-        max_cycles_per_run: clampInt(maxCyclesInput.value, 0, 0, 10000),
+      const maxCyclesCell = document.createElement("td");
+      const maxCyclesInput = document.createElement("input");
+      maxCyclesInput.type = "number";
+      maxCyclesInput.min = "0";
+      maxCyclesInput.max = "10000";
+      maxCyclesInput.value = String(clampInt(selection.max_cycles_per_run, 0, 0, 10000));
+      maxCyclesInput.disabled = !customMode || !selection.enabled;
+      maxCyclesInput.addEventListener("change", () => {
+        if (!customMode) return;
+        setSelection({
+          enabled: true,
+          max_cycles_per_run: clampInt(maxCyclesInput.value, 0, 0, 10000),
+        });
       });
-    });
-    maxCyclesCell.appendChild(maxCyclesInput);
+      maxCyclesCell.appendChild(maxCyclesInput);
 
-    const maxCommitsCell = document.createElement("td");
-    const maxCommitsInput = document.createElement("input");
-    maxCommitsInput.type = "number";
-    maxCommitsInput.min = "0";
-    maxCommitsInput.max = "10000";
-    maxCommitsInput.value = String(clampInt(selection.max_commits_per_run, 0, 0, 10000));
-    maxCommitsInput.disabled = !customMode || !selection.enabled;
-    maxCommitsInput.addEventListener("change", () => {
-      if (!customMode) return;
-      setSelection({
-        enabled: true,
-        max_commits_per_run: clampInt(maxCommitsInput.value, 0, 0, 10000),
+      const maxCommitsCell = document.createElement("td");
+      const maxCommitsInput = document.createElement("input");
+      maxCommitsInput.type = "number";
+      maxCommitsInput.min = "0";
+      maxCommitsInput.max = "10000";
+      maxCommitsInput.value = String(clampInt(selection.max_commits_per_run, 0, 0, 10000));
+      maxCommitsInput.disabled = !customMode || !selection.enabled;
+      maxCommitsInput.addEventListener("change", () => {
+        if (!customMode) return;
+        setSelection({
+          enabled: true,
+          max_commits_per_run: clampInt(maxCommitsInput.value, 0, 0, 10000),
+        });
       });
-    });
-    maxCommitsCell.appendChild(maxCommitsInput);
+      maxCommitsCell.appendChild(maxCommitsInput);
 
-    const setRowCheckedState = () => {
-      row.dataset.selected = String(Boolean((state.startRunSelection[key] || selection).enabled));
-    };
-    const syncRowState = () => {
-      row.classList.toggle("selected", Boolean((state.startRunSelection[key] || selection).enabled));
-      setRowCheckedState();
-    };
-    const toggleRow = (event) => {
-      if (event.target instanceof HTMLInputElement) return;
-      event.preventDefault();
-      if (!customMode) {
-        setStartRunMode("custom");
-      }
-      setSelection({ enabled: !Boolean((state.startRunSelection[key] || selection).enabled) });
-      syncRowState();
-      renderStartRunRepoTable();
-    };
-    row.addEventListener("click", toggleRow);
-    row.addEventListener("keydown", (event) => {
-      const key = String(event.key || "");
-      if (key === "Enter" || key === " ") {
+      const setRowCheckedState = () => {
+        row.dataset.selected = String(Boolean((state.startRunSelection[key] || selection).enabled));
+      };
+      const syncRowState = () => {
+        row.classList.toggle("selected", Boolean((state.startRunSelection[key] || selection).enabled));
+        setRowCheckedState();
+      };
+      const toggleRow = (event) => {
+        if (event.target instanceof HTMLInputElement) return;
         event.preventDefault();
-        toggleRow(event);
-      }
-    });
-    row.tabIndex = 0;
-    row.setAttribute("role", "button");
-    row.setAttribute("aria-label", `${repo.name || "repo"} launch selection`);
-    syncRowState();
-    repoCell.style.cursor = "pointer";
+        if (!customMode) {
+          setStartRunMode("custom");
+        }
+        setSelection({ enabled: !Boolean((state.startRunSelection[key] || selection).enabled) });
+        syncRowState();
+        renderStartRunRepoTable();
+      };
+      row.addEventListener("click", toggleRow);
+      row.addEventListener("keydown", (event) => {
+        const key = String(event.key || "");
+        if (key === "Enter" || key === " ") {
+          event.preventDefault();
+          toggleRow(event);
+        }
+      });
+      row.tabIndex = 0;
+      row.setAttribute("role", "button");
+      row.setAttribute("aria-label", `${repo.name || "repo"} launch selection`);
+      syncRowState();
+      repoCell.style.cursor = "pointer";
 
-    row.append(useCell, repoCell, branchCell, tasksCell, maxCyclesCell, maxCommitsCell);
-    elements.startRunRepoTable.appendChild(row);
+      row.append(useCell, repoCell, branchCell, tasksCell, maxCyclesCell, maxCommitsCell);
+      elements.startRunRepoTable.appendChild(row);
+    });
   });
 }
 
