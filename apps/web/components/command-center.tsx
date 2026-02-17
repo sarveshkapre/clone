@@ -70,6 +70,12 @@ type StreamEnvelope = {
   payload: Record<string, unknown>;
 };
 
+type ParsedQueueIntent = {
+  title: string;
+  repo: string;
+  parsed: boolean;
+};
+
 async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...init,
@@ -91,6 +97,21 @@ function formatIso(iso?: string): string {
   const value = new Date(iso);
   if (Number.isNaN(value.getTime())) return iso;
   return value.toISOString().replace("T", " ").replace(".000Z", "Z");
+}
+
+function parseQueueIntent(rawTitle: string, selectedRepo: string): ParsedQueueIntent {
+  const text = String(rawTitle || "").trim();
+  const explicit = text.match(/^(?:for|repo)\s+([a-zA-Z0-9._-]+)\s*:\s+(.+)$/i);
+  if (!explicit) {
+    return { title: text, repo: selectedRepo || "*", parsed: false };
+  }
+  const parsedRepo = String(explicit[1] || "").trim();
+  const parsedTitle = String(explicit[2] || "").trim();
+  return {
+    title: parsedTitle || text,
+    repo: parsedRepo || selectedRepo || "*",
+    parsed: parsedRepo.length > 0 && parsedTitle.length > 0,
+  };
 }
 
 export function CommandCenter() {
@@ -147,6 +168,8 @@ export function CommandCenter() {
     if (!activeRunId) return "Active run id is unavailable.";
     return "";
   }, [activeRun?.active, activeRunId, busyAction.length]);
+
+  const parsedQueueIntent = useMemo(() => parseQueueIntent(queueTitle, queueRepo), [queueRepo, queueTitle]);
 
   const loadStatus = useCallback(async () => {
     const payload = await apiRequest<SystemStatus>("/api/v1/system/status");
@@ -267,7 +290,8 @@ export function CommandCenter() {
   }, [codeRoot, loadPreset, maxCycles, parallelRepos, refreshAll, selectedRepos, tasksPerRepo]);
 
   const queueTask = useCallback(async () => {
-    const title = queueTitle.trim();
+    const parsedIntent = parseQueueIntent(queueTitle, queueRepo);
+    const title = parsedIntent.title.trim();
     if (!title) {
       setMessage("Task title is required.");
       return;
@@ -279,7 +303,7 @@ export function CommandCenter() {
         body: JSON.stringify({
           title,
           details: queueDetails,
-          repo: queueRepo || "*",
+          repo: parsedIntent.repo || "*",
           priority: queueInterrupt ? 1 : Math.max(1, Math.min(5, queuePriority)),
           is_interrupt: queueInterrupt,
         }),
@@ -287,7 +311,7 @@ export function CommandCenter() {
       setQueueTitle("");
       setQueueDetails("");
       setQueueInterrupt(false);
-      setMessage("Task queued.");
+      setMessage(parsedIntent.parsed ? `Task queued for ${parsedIntent.repo}.` : "Task queued.");
       await loadTasks();
     } catch (error) {
       setMessage(String(error));
@@ -545,11 +569,17 @@ export function CommandCenter() {
           <div className="space-y-2">
             <input
               type="text"
-              placeholder="Task title"
+              placeholder="Task title (or: for repo-name: task)"
               value={queueTitle}
               onChange={(event) => setQueueTitle(event.target.value)}
               className="w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm"
             />
+            {parsedQueueIntent.parsed ? (
+              <p className="rounded-lg border border-[#cfe2d8] bg-[#f4faf7] px-3 py-2 text-xs text-[#165947]">
+                Parsed: repo <span className="font-semibold">{parsedQueueIntent.repo}</span> · task{" "}
+                <span className="font-semibold">{parsedQueueIntent.title}</span>
+              </p>
+            ) : null}
             <input
               type="text"
               placeholder="Details"
