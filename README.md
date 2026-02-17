@@ -298,6 +298,7 @@ Highlights:
 - `docs/product_roadmap_template.md`
 - `docs/full_agentic_roadmap.md`
 - `docs/uiux_playbook.md`
+- `docs/self-hosted-runner.md`
 - `UIUX.md`
 - `prompts/` (agent behavior)
 - `scripts/` (discovery + loop)
@@ -313,6 +314,9 @@ Run open-source readiness checks (no hardcoded user paths / legacy repo file dep
 ```bash
 npm run check:oss
 ```
+
+GitHub Actions in this repository are configured for **self-hosted runners**.
+Setup and registration steps: `docs/self-hosted-runner.md`.
 
 Use `IGNORED_REPOS_CSV` for durable and one-off overrides.
 

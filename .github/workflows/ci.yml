@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate Build And Checks
+    runs-on: self-hosted
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Verify self-hosted runner prerequisites
+        run: bash ./scripts/check_self_hosted_runner.sh
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Open-source readiness checks
+        run: npm run check:oss
+
+      - name: Control plane precheck
+        run: ./bin/clone precheck
+
+      - name: Build web app
+        run: npm run web:build
+
+      - name: Build worker
+        run: npm run worker:build
