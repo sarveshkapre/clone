@@ -29,6 +29,11 @@ type RunItem = {
   repos_no_change?: number;
 };
 
+type ActiveRunPayload = {
+  active: boolean;
+  run: RunItem | null;
+};
+
 type TaskItem = {
   id: string;
   status: string;
@@ -90,6 +95,7 @@ function formatIso(iso?: string): string {
 
 export function CommandCenter() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
+  const [activeRun, setActiveRun] = useState<ActiveRunPayload | null>(null);
   const [repos, setRepos] = useState<RepoItem[]>([]);
   const [runs, setRuns] = useState<RunItem[]>([]);
   const [tasks, setTasks] = useState<TaskItem[]>([]);
@@ -114,10 +120,12 @@ export function CommandCenter() {
   const [message, setMessage] = useState<string>("");
 
   const activeRunId = useMemo(() => {
+    const fromActive = String(activeRun?.run?.id || "").trim();
+    if (fromActive) return fromActive;
     const fromStatus = String(status?.run_id || "").trim();
     if (fromStatus) return fromStatus;
     return String(runs[0]?.id || "").trim();
-  }, [status?.run_id, runs]);
+  }, [activeRun?.run?.id, runs, status?.run_id]);
 
   const filteredRepos = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -153,6 +161,11 @@ export function CommandCenter() {
     setRuns(Array.isArray(payload.items) ? payload.items : []);
   }, []);
 
+  const loadActiveRun = useCallback(async () => {
+    const payload = await apiRequest<ActiveRunPayload>("/api/v1/runs/active");
+    setActiveRun(payload);
+  }, []);
+
   const loadTasks = useCallback(async () => {
     const payload = await apiRequest<{ items: TaskItem[] }>("/api/v1/tasks?limit=80");
     setTasks(Array.isArray(payload.items) ? payload.items : []);
@@ -178,8 +191,8 @@ export function CommandCenter() {
   }, []);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadStatus(), loadRuns(), loadTasks(), loadDiagnostics()]);
-  }, [loadDiagnostics, loadRuns, loadStatus, loadTasks]);
+    await Promise.all([loadStatus(), loadActiveRun(), loadRuns(), loadTasks(), loadDiagnostics()]);
+  }, [loadActiveRun, loadDiagnostics, loadRuns, loadStatus, loadTasks]);
 
   const runAction = useCallback(
     async (action: "stop" | "force-stop" | "restart") => {
@@ -322,7 +335,7 @@ export function CommandCenter() {
             <h1 className="text-3xl font-semibold tracking-tight">Mission Control</h1>
           </div>
           <div className="rounded-full border border-[var(--line)] bg-[#f6faf7] px-3 py-1 text-xs text-[var(--ink-soft)]">
-            {status?.active ? "Run Active" : "Idle"} · {status?.run_state || "unknown"}
+            {activeRun?.active ? "Run Active" : "Idle"} · {status?.run_state || "unknown"}
           </div>
         </div>
         <p className="mt-3 text-sm text-[var(--ink-soft)]">
@@ -362,7 +375,7 @@ export function CommandCenter() {
               <button
                 type="button"
                 onClick={() => runAction("stop")}
-                disabled={!activeRunId || busyAction.length > 0}
+                disabled={!activeRun?.active || !activeRunId || busyAction.length > 0}
                 className="rounded-full border border-[#d58d75] bg-[#fef3ef] px-3 py-1 text-xs font-semibold text-[#a74a2a] disabled:opacity-50"
               >
                 Stop
@@ -370,7 +383,7 @@ export function CommandCenter() {
               <button
                 type="button"
                 onClick={() => runAction("force-stop")}
-                disabled={!activeRunId || busyAction.length > 0}
+                disabled={!activeRun?.active || !activeRunId || busyAction.length > 0}
                 className="rounded-full border border-[#d27474] bg-[#fdeeee] px-3 py-1 text-xs font-semibold text-[#9d1f1f] disabled:opacity-50"
               >
                 Force Stop
@@ -378,7 +391,7 @@ export function CommandCenter() {
               <button
                 type="button"
                 onClick={() => runAction("restart")}
-                disabled={!activeRunId || busyAction.length > 0}
+                disabled={!activeRun?.active || !activeRunId || busyAction.length > 0}
                 className="rounded-full border border-[#9db8ac] bg-[#edf7f2] px-3 py-1 text-xs font-semibold text-[#165947] disabled:opacity-50"
               >
                 Restart

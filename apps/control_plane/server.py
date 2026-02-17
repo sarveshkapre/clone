@@ -3707,6 +3707,32 @@ class APIHandler(SimpleHTTPRequestHandler):
             )
         return {"items": items, "limit": limit, "generated_at": iso_utc(utc_now())}
 
+    def _v1_active_run_payload(self) -> dict[str, Any]:
+        latest = with_effective_run_fields(self.monitor.latest_run()) or {}
+        status = self.controller.status_payload(latest)
+        run_id = str(status.get("run_id") or "")
+        if not run_id:
+            run_payload: dict[str, Any] | None = None
+        else:
+            run_payload = {
+                "id": run_id,
+                "state": str(status.get("run_state") or "unknown"),
+                "state_raw": str(status.get("run_state_raw") or status.get("run_state") or "unknown"),
+                "started_at": str(latest.get("started_at") or ""),
+                "ended_at": str(latest.get("ended_at") or ""),
+                "duration_seconds": safe_int(latest.get("duration_seconds"), 0),
+                "repo_count": safe_int(latest.get("repo_count"), 0),
+                "repos_changed": safe_int(latest.get("repos_changed_est"), 0),
+                "repos_no_change": safe_int(latest.get("repos_no_change"), 0),
+                "run_online": bool(status.get("active")),
+            }
+        return {
+            "active": bool(status.get("active")),
+            "run": run_payload,
+            "control_status": status,
+            "generated_at": iso_utc(utc_now()),
+        }
+
     def _v1_tasks_payload(self, query: dict[str, list[str]]) -> dict[str, Any]:
         status = str(query.get("status", [""])[0] or "")
         repo = str(query.get("repo", [""])[0] or "")
@@ -3866,6 +3892,10 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         if normalized_path == "/api/v1/runs":
             self._send_json(self._v1_runs_payload(query))
+            return
+
+        if normalized_path == "/api/v1/runs/active":
+            self._send_json(self._v1_active_run_payload())
             return
 
         if normalized_path.startswith("/api/v1/runs/"):
