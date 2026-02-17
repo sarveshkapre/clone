@@ -141,6 +141,13 @@ export function CommandCenter() {
     return repos.filter((repo) => selected.has(repo.path));
   }, [repos, selectedRepoPaths]);
 
+  const runControlBlockReason = useMemo(() => {
+    if (busyAction.length > 0) return "Another action is in progress.";
+    if (!activeRun?.active) return "No active run is currently online.";
+    if (!activeRunId) return "Active run id is unavailable.";
+    return "";
+  }, [activeRun?.active, activeRunId, busyAction.length]);
+
   const loadStatus = useCallback(async () => {
     const payload = await apiRequest<SystemStatus>("/api/v1/system/status");
     setStatus(payload);
@@ -334,7 +341,13 @@ export function CommandCenter() {
             <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--ink-soft)]">Clone Runtime</p>
             <h1 className="text-3xl font-semibold tracking-tight">Mission Control</h1>
           </div>
-          <div className="rounded-full border border-[var(--line)] bg-[#f6faf7] px-3 py-1 text-xs text-[var(--ink-soft)]">
+          <div
+            className={`rounded-full border px-3 py-1 text-xs ${
+              activeRun?.active
+                ? "border-[#9db8ac] bg-[#edf7f2] text-[#165947]"
+                : "border-[var(--line)] bg-[#f6faf7] text-[var(--ink-soft)]"
+            }`}
+          >
             {activeRun?.active ? "Run Active" : "Idle"} · {status?.run_state || "unknown"}
           </div>
         </div>
@@ -375,7 +388,8 @@ export function CommandCenter() {
               <button
                 type="button"
                 onClick={() => runAction("stop")}
-                disabled={!activeRun?.active || !activeRunId || busyAction.length > 0}
+                disabled={runControlBlockReason.length > 0}
+                title={runControlBlockReason || "Stop active run"}
                 className="rounded-full border border-[#d58d75] bg-[#fef3ef] px-3 py-1 text-xs font-semibold text-[#a74a2a] disabled:opacity-50"
               >
                 Stop
@@ -383,7 +397,8 @@ export function CommandCenter() {
               <button
                 type="button"
                 onClick={() => runAction("force-stop")}
-                disabled={!activeRun?.active || !activeRunId || busyAction.length > 0}
+                disabled={runControlBlockReason.length > 0}
+                title={runControlBlockReason || "Force stop active run"}
                 className="rounded-full border border-[#d27474] bg-[#fdeeee] px-3 py-1 text-xs font-semibold text-[#9d1f1f] disabled:opacity-50"
               >
                 Force Stop
@@ -391,13 +406,19 @@ export function CommandCenter() {
               <button
                 type="button"
                 onClick={() => runAction("restart")}
-                disabled={!activeRun?.active || !activeRunId || busyAction.length > 0}
+                disabled={runControlBlockReason.length > 0}
+                title={runControlBlockReason || "Restart active run"}
                 className="rounded-full border border-[#9db8ac] bg-[#edf7f2] px-3 py-1 text-xs font-semibold text-[#165947] disabled:opacity-50"
               >
                 Restart
               </button>
             </div>
           </div>
+          {runControlBlockReason ? (
+            <p className="mb-3 rounded-xl border border-[var(--line)] bg-[#f9fbf9] px-3 py-2 text-xs text-[var(--ink-soft)]">
+              Controls disabled: {runControlBlockReason}
+            </p>
+          ) : null}
 
           <div className="mb-3 grid gap-2 md:grid-cols-4">
             <label className="text-xs text-[var(--ink-soft)]">
