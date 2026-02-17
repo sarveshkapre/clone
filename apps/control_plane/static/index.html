@@ -43,6 +43,15 @@
           <button type="button" data-route="controls">Controls</button>
           <button type="button" data-route="launch">Launch</button>
         </div>
+        <div id="routeControlBar" class="route-control-bar">
+          <div class="inline-controls">
+            <button id="routeOpenLaunchBtn" type="button">Open Run Launcher</button>
+            <button id="routeStopBtn" type="button">Stop</button>
+            <button id="routeForceStopBtn" type="button">Force Stop</button>
+            <button id="routeRestartBtn" type="button">Restart</button>
+          </div>
+          <span id="routeControlMeta" class="meta">Checking runtime control status...</span>
+        </div>
       </section>
 
       <section id="commandDeckSection" class="panel command-deck-panel" data-collapsible="false" data-routes="overview runs repos alerts controls">
@@ -225,9 +234,34 @@
             <div class="inline-controls">
               <button id="controlStartBtn" type="button">Configure Next Run</button>
               <button id="controlStopBtn" type="button">Stop</button>
+              <button id="controlForceStopBtn" type="button">Force Stop</button>
               <button id="controlRestartBtn" type="button">Restart</button>
               <button id="controlNormalizeBtn" type="button">Normalize Loops</button>
           </div>
+        </div>
+      </section>
+
+      <section id="launchDiagnosticsSection" class="panel diagnostics-panel" data-routes="controls">
+        <div class="panel-head">
+          <h2>Launch Diagnostics</h2>
+          <span class="meta" id="launchDiagMeta">Loading launch diagnostics...</span>
+        </div>
+        <div class="inline-controls">
+          <button id="launchDiagRefreshBtn" type="button">Refresh Diagnostics</button>
+        </div>
+        <div class="diagnostics-grid">
+          <article>
+            <p class="meta">Server</p>
+            <pre id="launchDiagServer" class="diag-block">Loading...</pre>
+          </article>
+          <article>
+            <p class="meta">Runtime Paths</p>
+            <pre id="launchDiagPaths" class="diag-block">Loading...</pre>
+          </article>
+          <article>
+            <p class="meta">Recent Log Errors</p>
+            <pre id="launchDiagErrors" class="diag-block">Loading...</pre>
+          </article>
         </div>
       </section>
 
@@ -308,7 +342,7 @@
           </div>
           <div class="inline-controls task-queue-compose">
             <label for="taskQueueTitle">Task</label>
-            <input id="taskQueueTitle" type="text" placeholder="For project xyz: add ..." />
+            <input id="taskQueueTitle" type="text" placeholder="readme for stock analyzer" />
             <label for="taskQueueDetails">Details</label>
             <input id="taskQueueDetails" type="text" placeholder="Optional context / constraints" />
             <button id="taskQueueAddBtn" type="button">Add To Queue</button>

@@ -113,6 +113,58 @@ def safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def to_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    return text in {"1", "true", "yes", "y", "on"}
+
+
+def pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def normalize_effective_run_state(state: Any, pid: Any = 0, pid_alive_hint: bool | None = None) -> str:
+    raw_state = str(state or "unknown").strip() or "unknown"
+    run_pid = safe_int(pid, 0)
+    run_pid_alive = pid_alive_hint if isinstance(pid_alive_hint, bool) else pid_is_alive(run_pid)
+
+    # If the status file still says running but the process is gone, surface the truthful state.
+    if not run_pid_alive and (raw_state.startswith("running") or raw_state == "starting"):
+        return "stopped"
+    return raw_state
+
+
+def run_is_online(state: Any, pid: Any = 0, pid_alive_hint: bool | None = None) -> bool:
+    effective_state = normalize_effective_run_state(state, pid=pid, pid_alive_hint=pid_alive_hint)
+    return effective_state.startswith("running") or effective_state == "starting"
+
+
+def with_effective_run_fields(run: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(run, dict):
+        return None
+    payload = dict(run)
+    raw_state = str(payload.get("state") or "unknown")
+    run_pid = safe_int(payload.get("pid"), 0)
+    run_pid_alive = pid_is_alive(run_pid)
+    effective_state = normalize_effective_run_state(raw_state, pid=run_pid, pid_alive_hint=run_pid_alive)
+    payload["state_raw"] = raw_state
+    payload["state"] = effective_state
+    payload["run_online"] = run_is_online(effective_state, pid=run_pid, pid_alive_hint=run_pid_alive)
+    payload["pid_alive"] = run_pid_alive
+    return payload
+
+
 def tail_lines(path: Path, limit: int) -> list[str]:
     if not path.exists() or limit <= 0:
         return []
@@ -1285,8 +1337,13 @@ class CloneMonitor:
         alerts: list[dict[str, Any]] = []
         now = utc_now()
         run_id = str(latest_run.get("run_id") or "")
-        state = str(latest_run.get("state") or "unknown")
-        run_online = not state.startswith("finished")
+        state_raw = str(latest_run.get("state_raw") or latest_run.get("state") or "unknown")
+        state = normalize_effective_run_state(
+            state_raw,
+            pid=latest_run.get("pid"),
+            pid_alive_hint=latest_run.get("pid_alive") if isinstance(latest_run.get("pid_alive"), bool) else None,
+        )
+        run_online = run_is_online(state, pid=latest_run.get("pid"))
         duration_seconds = safe_int(latest_run.get("duration_seconds"), 0)
 
         if run_online:
@@ -1366,17 +1423,16 @@ class CloneMonitor:
         alert_lock_skip_threshold: int = 25,
     ) -> dict[str, Any]:
         runs = self.list_runs(limit=history_limit)
-        latest = runs[0] if runs else None
+        latest_raw = runs[0] if runs else None
+        latest = with_effective_run_fields(latest_raw)
+        runs_with_effective = [with_effective_run_fields(item) or item for item in runs]
         events: list[dict[str, Any]] = []
         run_commits: list[dict[str, str]] = []
         if latest:
             events = self.latest_events(latest["run_id"], limit=event_limit)
             run_commits = self.latest_commit_lines_from_run_log(latest["run_id"], limit=80)
 
-        reactor_online = False
-        if latest:
-            state = str(latest.get("state", ""))
-            reactor_online = not state.startswith("finished")
+        reactor_online = bool(latest and run_is_online(latest.get("state"), pid=latest.get("pid"), pid_alive_hint=latest.get("pid_alive")))
 
         recent_commits = self.recent_commits(hours=commit_hours, limit=commit_limit)
         alerts = self.build_alerts(
@@ -1404,7 +1460,7 @@ class CloneMonitor:
             },
             "alerts": alerts,
             "latest_run": latest,
-            "run_history": runs,
+            "run_history": runs_with_effective,
             "recent_commits": recent_commits,
             "run_commits": run_commits,
             "latest_events": events,
@@ -1531,6 +1587,7 @@ class TaskQueueStore:
             "route_reason": str(task.get("route_reason") or ""),
             "route_claimed_count": max(0, safe_int(task.get("route_claimed_count"), 0)),
             "route_updated_at": str(task.get("route_updated_at") or ""),
+            "is_interrupt": bool(to_bool(task.get("is_interrupt"))),
         }
 
     def _task_sort_key(self, task: dict[str, Any]) -> tuple[int, str, str]:
@@ -1608,6 +1665,7 @@ class TaskQueueStore:
         route_reason: str = "",
         route_claimed_count: int = 0,
         route_updated_at: str = "",
+        is_interrupt: bool = False,
         source: str = "control_plane",
         task_id: str = "",
     ) -> dict[str, Any]:
@@ -1647,6 +1705,7 @@ class TaskQueueStore:
                 "route_claimed_count": max(0, safe_int(route_claimed_count, 0)),
                 "route_updated_at": str(route_updated_at or "").strip(),
                 "source": task_source,
+                "is_interrupt": bool(to_bool(is_interrupt)),
                 "created_at": now,
                 "updated_at": now,
             }
@@ -2345,11 +2404,12 @@ class RunController:
             latest_run = self.monitor.latest_run()
 
         run_id = str((latest_run or {}).get("run_id") or "")
-        run_state = str((latest_run or {}).get("state") or "unknown")
+        run_state_raw = str((latest_run or {}).get("state") or "unknown")
         run_pid = safe_int((latest_run or {}).get("pid"), 0)
         run_pid_alive = self._pid_alive(run_pid)
         run_command = self._pid_command(run_pid) if run_pid_alive else ""
-        active = bool(latest_run and not run_state.startswith("finished") and run_pid_alive)
+        run_state = normalize_effective_run_state(run_state_raw, pid=run_pid, pid_alive_hint=run_pid_alive)
+        active = bool(latest_run and run_is_online(run_state, pid=run_pid, pid_alive_hint=run_pid_alive))
 
         managed = self._load_managed_state()
         launcher_pid = safe_int(managed.get("launcher_pid"), 0)
@@ -2364,6 +2424,7 @@ class RunController:
             "script_exists": self.script_path.exists(),
             "run_id": run_id,
             "run_state": run_state,
+            "run_state_raw": run_state_raw,
             "run_pid": run_pid,
             "run_pid_alive": run_pid_alive,
             "run_pid_command": run_command,
@@ -3372,6 +3433,7 @@ class APIHandler(SimpleHTTPRequestHandler):
     agent: AgentManager
     task_queue: TaskQueueStore
     static_dir: Path
+    launch_info: dict[str, Any]
 
     def __init__(self, *args: Any, directory: str | None = None, **kwargs: Any):
         super().__init__(*args, directory=directory or str(self.static_dir), **kwargs)
@@ -3387,8 +3449,48 @@ class APIHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            # Client disconnected before body flush; avoid noisy traceback spam.
+            return
+
+    def _launch_diagnostics_payload(self) -> dict[str, Any]:
+        launch = dict(self.launch_info or {})
+        ui_log_path = Path(str(launch.get("ui_log") or self.monitor.logs_dir / "control-plane-ui.log"))
+        pid_file_path = Path(str(launch.get("pid_file") or self.monitor.logs_dir / "control-plane-ui-8787.pid"))
+        status = self.controller.status_payload()
+        latest_run = with_effective_run_fields(self.monitor.latest_run())
+        log_tail = tail_lines(ui_log_path, 80)
+        error_pattern = re.compile(r"(Traceback|Exception|Error|Failed|BrokenPipe|ConnectionReset)", re.IGNORECASE)
+        error_lines = [line for line in log_tail if error_pattern.search(line)]
+        return {
+            "generated_at": iso_utc(utc_now()),
+            "server": {
+                "pid": os.getpid(),
+                "started_at": str(launch.get("started_at") or ""),
+                "host": str(launch.get("host") or ""),
+                "port": safe_int(launch.get("port"), 0),
+                "python": sys.version.split()[0],
+            },
+            "paths": {
+                "clone_root": str(self.monitor.clone_root),
+                "logs_dir": str(self.monitor.logs_dir),
+                "ui_log": str(ui_log_path),
+                "pid_file": str(pid_file_path),
+                "repos_file": str(self.monitor.repos_file),
+                "task_queue_file": str(self.task_queue.queue_file),
+            },
+            "files": {
+                "ui_log_exists": ui_log_path.exists(),
+                "ui_log_size_bytes": ui_log_path.stat().st_size if ui_log_path.exists() else 0,
+                "pid_file_exists": pid_file_path.exists(),
+            },
+            "control_status": status,
+            "latest_run": latest_run,
+            "recent_log_errors": error_lines[-20:],
+        }
 
     def _read_json_body(self) -> dict[str, Any]:
         raw_len = safe_int(self.headers.get("Content-Length"), 0)
@@ -3483,6 +3585,10 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         if normalized_path == "/api/health":
             self._send_json({"ok": True, "time": iso_utc(utc_now())})
+            return
+
+        if normalized_path in {"/api/launch_diagnostics", "/api/system/launch_diagnostics"}:
+            self._send_json(self._launch_diagnostics_payload())
             return
 
         if normalized_path == "/api/snapshot":
@@ -3728,6 +3834,7 @@ class APIHandler(SimpleHTTPRequestHandler):
                     route_reason=str(request.get("route_reason") or ""),
                     route_claimed_count=safe_int(request.get("route_claimed_count"), 0),
                     route_updated_at=str(request.get("route_updated_at") or ""),
+                    is_interrupt=to_bool(request.get("is_interrupt")),
                     source=str(request.get("source") or "control_plane"),
                     task_id=str(request.get("id") or ""),
                 )
@@ -3830,6 +3937,7 @@ def make_handler(
     agent: AgentManager,
     task_queue: TaskQueueStore,
     static_dir: Path,
+    launch_info: dict[str, Any] | None = None,
 ):
     class BoundHandler(APIHandler):
         pass
@@ -3840,6 +3948,7 @@ def make_handler(
     BoundHandler.agent = agent
     BoundHandler.task_queue = task_queue
     BoundHandler.static_dir = static_dir
+    BoundHandler.launch_info = dict(launch_info or {})
     return BoundHandler
 
 
@@ -3900,7 +4009,14 @@ def main() -> int:
     notifier = NotificationManager(logs_dir=logs_dir)
     agent = AgentManager(logs_dir=logs_dir, controller=controller)
     task_queue = TaskQueueStore(queue_file=task_queue_file)
-    handler = make_handler(monitor, controller, notifier, agent, task_queue, static_dir)
+    launch_info = {
+        "started_at": iso_utc(utc_now()),
+        "host": str(args.host),
+        "port": int(args.port),
+        "ui_log": str(logs_dir / "control-plane-ui.log"),
+        "pid_file": str(logs_dir / f"control-plane-ui-{args.port}.pid"),
+    }
+    handler = make_handler(monitor, controller, notifier, agent, task_queue, static_dir, launch_info=launch_info)
 
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(f"Clone Control Plane listening on http://{args.host}:{args.port}")

@@ -39,6 +39,11 @@ const elements = {
   deckAlertStack: document.getElementById("deckAlertStack"),
   deckOpenAlertsBtn: document.getElementById("deckOpenAlertsBtn"),
   routeNav: document.getElementById("routeNav"),
+  routeControlMeta: document.getElementById("routeControlMeta"),
+  routeOpenLaunchBtn: document.getElementById("routeOpenLaunchBtn"),
+  routeStopBtn: document.getElementById("routeStopBtn"),
+  routeForceStopBtn: document.getElementById("routeForceStopBtn"),
+  routeRestartBtn: document.getElementById("routeRestartBtn"),
   opsMeta: document.getElementById("opsMeta"),
   opsHealthScore: document.getElementById("opsHealthScore"),
   opsHealthSummary: document.getElementById("opsHealthSummary"),
@@ -68,8 +73,14 @@ const elements = {
   controlTasksPerRepo: document.getElementById("controlTasksPerRepo"),
   controlStartBtn: document.getElementById("controlStartBtn"),
   controlStopBtn: document.getElementById("controlStopBtn"),
+  controlForceStopBtn: document.getElementById("controlForceStopBtn"),
   controlRestartBtn: document.getElementById("controlRestartBtn"),
   controlNormalizeBtn: document.getElementById("controlNormalizeBtn"),
+  launchDiagMeta: document.getElementById("launchDiagMeta"),
+  launchDiagRefreshBtn: document.getElementById("launchDiagRefreshBtn"),
+  launchDiagServer: document.getElementById("launchDiagServer"),
+  launchDiagPaths: document.getElementById("launchDiagPaths"),
+  launchDiagErrors: document.getElementById("launchDiagErrors"),
   startRunModal: document.getElementById("startRunModal"),
   startRunCloseBtn: document.getElementById("startRunCloseBtn"),
   startRunCancelBtn: document.getElementById("startRunCancelBtn"),
@@ -185,6 +196,7 @@ const ACTIVE_RUN_DETAILS_REFRESH_MS = 10000;
 const REPO_INSIGHTS_REFRESH_MS = 45000;
 const NOTIFY_EVENTS_REFRESH_MS = 30000;
 const TASK_QUEUE_REFRESH_MS = 12000;
+const LAUNCH_DIAGNOSTICS_REFRESH_MS = 45000;
 const REPOS_CATALOG_REFRESH_MS = 120000;
 const LOCAL_REPOS_REFRESH_MS = 120000;
 const GITHUB_REPOS_REFRESH_MS = 180000;
@@ -205,6 +217,7 @@ const EVENTS_AUTOSCROLL_STORAGE_KEY = "clone_control_plane_events_autoscroll_v1"
 const AGENT_AUTOPILOT_STORAGE_KEY = "clone_control_plane_agent_autopilot_v1";
 const AGENT_MODE_STORAGE_KEY = "clone_control_plane_agent_mode_v1";
 const AGENT_INTERVAL_STORAGE_KEY = "clone_control_plane_agent_interval_v1";
+const START_RUN_PREFS_STORAGE_KEY = "clone_control_plane_start_run_prefs_v1";
 const PACIFIC_TIMEZONE = "America/Los_Angeles";
 const PACIFIC_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: PACIFIC_TIMEZONE,
@@ -340,6 +353,9 @@ const state = {
   taskQueueSummary: null,
   taskQueueUpdatedAt: 0,
   taskQueueBusy: false,
+  launchDiagnostics: null,
+  launchDiagnosticsUpdatedAt: 0,
+  launchDiagnosticsBusy: false,
   controlStatus: null,
   controlBusy: false,
   seenToastAlerts: new Set(),
@@ -1375,6 +1391,14 @@ function commandPaletteActions() {
       run: async () => runControlAction("stop"),
     },
     {
+      id: "force_stop_run",
+      label: "Force stop run loop",
+      detail: "Terminate active run loop immediately.",
+      keywords: "force stop kill run halt reactor",
+      enabled: active,
+      run: async () => runControlAction("stop_force"),
+    },
+    {
       id: "restart_run",
       label: "Restart run loop",
       detail: "Restart active run loop with current settings.",
@@ -1907,13 +1931,15 @@ function renderCommandDeck(snapshot) {
   const queue = run.latest_cycle_queue || {};
   const loopGroups = Number(snapshot?.control_status?.loop_groups_count || 0);
   const hasActiveRun = Boolean(snapshot?.control_status?.active);
+  const rawRunState = String(run.state || "unknown");
+  const displayRunState = !hasActiveRun && rawRunState.startsWith("running") ? "stopped" : rawRunState;
   const recentRuns = (snapshot?.run_history || []).slice(0, 12).reverse();
   const changedTrend = recentRuns.map((item) => Number(item?.repos_changed_est || 0));
   const lockTrend = recentRuns.map((item) => Number(item?.repos_skipped_lock || 0));
 
   elements.deckMeta.textContent = `Run ${formatRunId(run.run_id)} • updated ${formatRelativeIso(snapshot?.generated_at || "")}`;
   elements.deckNowValue.textContent = hasActiveRun ? "Running" : "Idle";
-  elements.deckNowMeta.textContent = `${run.state || "unknown"} • cycle ${run.latest_cycle || 0}`;
+  elements.deckNowMeta.textContent = `${displayRunState} • cycle ${run.latest_cycle || 0}`;
 
   elements.deckFlowValue.textContent = `${run.repos_changed_est || 0} changed`;
   elements.deckFlowMeta.textContent = `${run.repos_no_change || 0} no-change • ${queue.spawned ?? run.spawned_workers ?? 0} spawned`;
@@ -2530,7 +2556,8 @@ function renderControlStatus(controlStatus) {
   state.controlStatus = controlStatus || {};
   const active = Boolean(state.controlStatus?.active);
   const runId = formatRunId(state.controlStatus?.run_id);
-  const runState = state.controlStatus?.run_state || "unknown";
+  const rawRunState = String(state.controlStatus?.run_state || "unknown");
+  const runState = !active && rawRunState.startsWith("running") ? "stopped" : rawRunState;
   const runPid = state.controlStatus?.run_pid || "-";
   const launcherPid = state.controlStatus?.managed_launcher_pid || "-";
   const loopCount = Array.isArray(state.controlStatus?.loop_pids) ? state.controlStatus.loop_pids.length : 0;
@@ -2542,6 +2569,11 @@ function renderControlStatus(controlStatus) {
     elements.controlStatusMeta.textContent = `Active ${runId} • ${runState} • pid ${runPid} • launcher ${launcherPid}${selectedReposText} • loops ${loopCount} / groups ${loopGroups}`;
   } else {
     elements.controlStatusMeta.textContent = `Idle • latest ${runId} • state ${runState}${selectedReposText} • loops ${loopCount} / groups ${loopGroups}`;
+  }
+  if (elements.routeControlMeta) {
+    elements.routeControlMeta.textContent = active
+      ? `Active ${runId} • ${runState} • loops ${loopCount}`
+      : `Idle • latest ${runId} • state ${runState}`;
   }
 
   if (state.controlStatus?.multiple_loops_detected) {
@@ -2556,8 +2588,13 @@ function renderControlStatus(controlStatus) {
 
   elements.controlStartBtn.disabled = state.controlBusy;
   elements.controlStopBtn.disabled = state.controlBusy || !active;
+  elements.controlForceStopBtn.disabled = state.controlBusy || !active;
   elements.controlRestartBtn.disabled = state.controlBusy || !active;
   elements.controlNormalizeBtn.disabled = state.controlBusy || loopGroups <= 1;
+  if (elements.routeOpenLaunchBtn) elements.routeOpenLaunchBtn.disabled = state.controlBusy;
+  if (elements.routeStopBtn) elements.routeStopBtn.disabled = state.controlBusy || !active;
+  if (elements.routeForceStopBtn) elements.routeForceStopBtn.disabled = state.controlBusy || !active;
+  if (elements.routeRestartBtn) elements.routeRestartBtn.disabled = state.controlBusy || !active;
   elements.controlParallelRepos.disabled = state.controlBusy;
   elements.controlMaxCycles.disabled = state.controlBusy;
   elements.controlTasksPerRepo.disabled = state.controlBusy;
@@ -2886,7 +2923,16 @@ function renderTaskQueue() {
     modelCell.textContent = item.route_model || "-";
 
     const taskCell = document.createElement("td");
-    taskCell.textContent = item.title || "-";
+    taskCell.className = "task-title-cell";
+    if (Boolean(item.is_interrupt)) {
+      const interruptBadge = document.createElement("span");
+      interruptBadge.className = "state-badge interrupt";
+      interruptBadge.textContent = "interrupt";
+      interruptBadge.title = "High-priority operator task";
+      taskCell.appendChild(interruptBadge);
+      taskCell.appendChild(document.createTextNode(" "));
+    }
+    taskCell.appendChild(document.createTextNode(item.title || "-"));
     const detailText = String(item.details || "").trim();
     if (detailText) {
       taskCell.title = detailText;
@@ -2950,28 +2996,284 @@ async function loadTaskQueue(force = false) {
   renderTaskQueue();
 }
 
-function parseQuickTaskCommand(rawText) {
-  const text = String(rawText || "").trim();
+function setLaunchDiagnosticsBusy(busy) {
+  state.launchDiagnosticsBusy = Boolean(busy);
+  if (elements.launchDiagRefreshBtn) {
+    elements.launchDiagRefreshBtn.disabled = state.launchDiagnosticsBusy;
+    elements.launchDiagRefreshBtn.textContent = state.launchDiagnosticsBusy ? "Refreshing..." : "Refresh Diagnostics";
+  }
+}
+
+function renderLaunchDiagnostics(payload) {
+  const safe = payload && typeof payload === "object" ? payload : {};
+  state.launchDiagnostics = safe;
+
+  const server = safe.server && typeof safe.server === "object" ? safe.server : {};
+  const control = safe.control_status && typeof safe.control_status === "object" ? safe.control_status : {};
+  const files = safe.files && typeof safe.files === "object" ? safe.files : {};
+  const paths = safe.paths && typeof safe.paths === "object" ? safe.paths : {};
+  const latestRun = safe.latest_run && typeof safe.latest_run === "object" ? safe.latest_run : {};
+  const recentErrors = Array.isArray(safe.recent_log_errors) ? safe.recent_log_errors : [];
+
+  if (elements.launchDiagMeta) {
+    const generatedAt = String(safe.generated_at || "");
+    const runState = String(control.run_state || "unknown");
+    const active = Boolean(control.active);
+    const pid = Number(server.pid || 0);
+    elements.launchDiagMeta.textContent = generatedAt
+      ? `Updated ${formatRelativeIso(generatedAt)} • ${active ? "active" : "idle"} • run ${runState} • server pid ${pid || "-"}`
+      : "No diagnostics available yet.";
+  }
+
+  if (elements.launchDiagServer) {
+    const lines = [
+      `pid: ${Number(server.pid || 0) || "-"}`,
+      `started_at: ${formatUtc(server.started_at || "")}`,
+      `host: ${String(server.host || "-")}`,
+      `port: ${Number(server.port || 0) || "-"}`,
+      `python: ${String(server.python || "-")}`,
+      `run_active: ${Boolean(control.active) ? "yes" : "no"}`,
+      `run_state: ${String(control.run_state || "unknown")}`,
+      `run_state_raw: ${String(control.run_state_raw || "-")}`,
+      `run_pid: ${Number(control.run_pid || 0) || "-"}`,
+      `latest_run: ${formatRunId(latestRun.run_id || "")}`,
+      `latest_state: ${String(latestRun.state || "-")}`,
+      `latest_state_raw: ${String(latestRun.state_raw || "-")}`,
+    ];
+    elements.launchDiagServer.textContent = lines.join("\n");
+  }
+
+  if (elements.launchDiagPaths) {
+    const lines = [
+      `clone_root: ${String(paths.clone_root || "-")}`,
+      `logs_dir: ${String(paths.logs_dir || "-")}`,
+      `repos_file: ${String(paths.repos_file || "-")}`,
+      `task_queue_file: ${String(paths.task_queue_file || "-")}`,
+      `ui_log: ${String(paths.ui_log || "-")}`,
+      `ui_log_exists: ${Boolean(files.ui_log_exists) ? "yes" : "no"}`,
+      `ui_log_size_bytes: ${Number(files.ui_log_size_bytes || 0)}`,
+      `pid_file: ${String(paths.pid_file || "-")}`,
+      `pid_file_exists: ${Boolean(files.pid_file_exists) ? "yes" : "no"}`,
+    ];
+    elements.launchDiagPaths.textContent = lines.join("\n");
+  }
+
+  if (elements.launchDiagErrors) {
+    elements.launchDiagErrors.textContent = recentErrors.length ? recentErrors.slice(-20).join("\n") : "No recent errors in UI log.";
+  }
+}
+
+async function loadLaunchDiagnostics(force = false) {
+  if (!force && Date.now() - state.launchDiagnosticsUpdatedAt < LAUNCH_DIAGNOSTICS_REFRESH_MS && state.launchDiagnostics) {
+    return state.launchDiagnostics;
+  }
+  if (state.launchDiagnosticsBusy) {
+    return state.launchDiagnostics;
+  }
+  setLaunchDiagnosticsBusy(true);
+  try {
+    const response = await fetch("/api/system/launch_diagnostics");
+    if (!response.ok) throw new Error(`launch diagnostics failed with status ${response.status}`);
+    const payload = await response.json();
+    state.launchDiagnosticsUpdatedAt = Date.now();
+    renderLaunchDiagnostics(payload);
+    return payload;
+  } catch (error) {
+    if (elements.launchDiagMeta) {
+      elements.launchDiagMeta.textContent = `Diagnostics unavailable: ${String(error)}`;
+    }
+    return state.launchDiagnostics;
+  } finally {
+    setLaunchDiagnosticsBusy(false);
+  }
+}
+
+function normalizeRepoMatchText(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildRepoAliases(repo) {
+  const aliases = new Set();
+  const name = String(repo?.name || "").trim();
+  const path = String(repo?.path || "").trim();
+  const nameFromPath = path ? String(path.split("/").pop()).trim() : "";
+  const addAlias = (value) => {
+    const normalized = normalizeRepoMatchText(value);
+    if (normalized) aliases.add(normalized);
+  };
+
+  addAlias(name);
+  if (path) addAlias(path);
+  addAlias(nameFromPath);
+  if (name) addAlias(name.replace(/[-_]+/g, " "));
+  if (name) addAlias(name.replace(/\s+/g, "-"));
+  if (name) addAlias(name.replace(/\s+/g, "_"));
+  if (nameFromPath) addAlias(nameFromPath.replace(/[-_]+/g, " "));
+  if (nameFromPath) addAlias(nameFromPath.replace(/\s+/g, "-"));
+  if (nameFromPath) addAlias(nameFromPath.replace(/\s+/g, "_"));
+  return [...aliases];
+}
+
+function parseTaskUrgency(text) {
+  return /\b(now|immediately|right now|urgent|asap|priority|interrupt|right away)\b/i.test(String(text || ""));
+}
+
+function cleanTaskText(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .replace(/[!?.]+$/g, "")
+    .trim();
+}
+
+function stripTaskPreamble(text) {
+  return String(text || "").replace(
+    /^\s*(?:okay|ok|hey|please|can you|could you|you can|now|right now|immediately|asap|please)\b[,\s]*/i,
+    "",
+  ).trim();
+}
+
+function cleanTaskTitle(rawText) {
+  const text = cleanTaskText(rawText);
+  return text
+    .replace(/^(?:now|immediately|right now|asap|urgent|right away|urgent:?)\s+/i, "")
+    .replace(/^(?:work on|write|create|add|fix|update|implement|build|open|adjust)\s+/i, "")
+    .replace(/^can you\s+/i, "")
+    .trim();
+}
+
+function resolveRepoHint(rawHint, repoCatalog) {
+  const hint = normalizeRepoMatchText(rawHint);
+  if (!hint) {
+    return { repo: "", confidence: 0 };
+  }
+
+  const candidates = Array.isArray(repoCatalog) ? repoCatalog : [];
+  if (!candidates.length) {
+    return { repo: "", confidence: 0 };
+  }
+
+  let winnerRepo = "";
+  let winnerAlias = "";
+  let winnerScore = 0;
+  for (const repo of candidates) {
+    const aliases = buildRepoAliases(repo);
+    for (const alias of aliases) {
+      if (!alias) continue;
+      let score = 0;
+      if (alias === hint) {
+        score = 140;
+      } else if (alias.length >= 4 && (alias.includes(hint) || hint.includes(alias))) {
+        score = 110 - Math.abs(alias.length - hint.length);
+      } else {
+        const aliasTokens = alias.split(" ");
+        const hintTokens = hint.split(" ");
+        let overlap = 0;
+        for (const token of hintTokens) {
+          if (aliasTokens.includes(token) && token.length > 1) overlap += 1;
+        }
+        if (overlap > 0) {
+          const denom = Math.max(aliasTokens.length, hintTokens.length);
+          if (denom > 0) score = 60 + Math.round((overlap * 40) / denom);
+        }
+      }
+
+      if (score > winnerScore) {
+        winnerScore = score;
+        winnerRepo = String(repo?.name || "").trim() || String(repo?.path || "").trim();
+        winnerAlias = alias;
+      }
+    }
+  }
+
+  if (winnerScore < 55 || !winnerRepo) {
+    return { repo: "", confidence: 0 };
+  }
+
+  return { repo: winnerRepo, confidence: winnerScore, alias: winnerAlias };
+}
+
+function parseQuickTaskCommand(rawText, repoCatalog = []) {
+  const text = cleanTaskText(stripTaskPreamble(String(rawText || "")));
   if (!text) return null;
 
+  const normalizedCatalog = Array.isArray(repoCatalog) ? repoCatalog : [];
+  const urgency = parseTaskUrgency(text);
   const patterns = [
-    /^\s*(?:for\s+)?(?:project|repo)\s+([a-zA-Z0-9._/-]+)\s*[:,-]?\s*(.+)$/i,
-    /^\s*([a-zA-Z0-9._/-]+)\s*:\s*(.+)$/,
+    /^\s*(?:for\s+)?(?:project|repo)\s+([a-zA-Z0-9._/\-\s]+)\s*[,:-]\s*(.+)$/i,
+    /^\s*([a-zA-Z0-9._/\-\s]+)\s*:\s*(.+)$/,
   ];
 
   for (const pattern of patterns) {
     const match = text.match(pattern);
     if (!match) continue;
-    const repo = String(match[1] || "").trim();
-    const title = String(match[2] || "")
-      .trim()
-      .replace(/^can you\s+/i, "");
-    if (repo && title) {
-      return { repo, title };
+    const repoHint = String(match[1] || "").trim();
+    const matchTitle = cleanTaskTitle(match[2]);
+    if (repoHint && matchTitle) {
+      const resolved = resolveRepoHint(repoHint, normalizedCatalog);
+      return {
+        isInterrupt: Boolean(urgency),
+        repoHint,
+        repo: resolved.repo || repoHint,
+        title: matchTitle,
+        resolvedRepo: Boolean(resolved.repo),
+      };
     }
   }
 
-  return null;
+  const forMatch = text.match(/^(.*\S)\s+(?:for|on)\s+([a-zA-Z0-9._/\-\s]+)$/i);
+  if (forMatch) {
+    const candidateTitle = cleanTaskTitle(forMatch[1]);
+    const repoHint = forMatch[2].trim();
+    if (candidateTitle && repoHint) {
+      const resolved = resolveRepoHint(repoHint, normalizedCatalog);
+      if (resolved.repo) {
+        return {
+          isInterrupt: Boolean(urgency),
+          repoHint,
+          repo: resolved.repo,
+          title: candidateTitle,
+          resolvedRepo: true,
+        };
+      }
+      return {
+        isInterrupt: Boolean(urgency),
+        repoHint,
+        repo: repoHint,
+        title: candidateTitle,
+        resolvedRepo: false,
+      };
+    }
+  }
+
+  return {
+    isInterrupt: Boolean(urgency),
+    repoHint: "",
+    repo: "",
+    title: cleanTaskTitle(text),
+    resolvedRepo: false,
+  };
+}
+
+async function ensureQueueRepoCatalog() {
+  if (state.repoCatalog.length) {
+    return state.repoCatalog;
+  }
+  try {
+    await loadReposCatalog(true);
+  } catch (error) {
+    console.warn("Task queue catalog load failed", error);
+  }
+  try {
+    await loadLocalRepos(true);
+  } catch (error) {
+    console.warn("Task queue local repo load failed", error);
+  }
+  rebuildStartRunCatalogFromSources();
+  return state.repoCatalog || [];
 }
 
 async function addTaskQueueItem() {
@@ -2989,20 +3291,41 @@ async function addTaskQueueItem() {
 
   setTaskQueueBusy(true);
   try {
+    const catalog = await ensureQueueRepoCatalog();
     let repoValue = String(elements.taskQueueRepo?.value || "*").trim() || "*";
+    let taskPriority = Number(elements.taskQueuePriority?.value || 3);
     let queueTitle = title;
-    const parsedCommand = parseQuickTaskCommand(title);
+    const detailsBase = String(elements.taskQueueDetails?.value || "").trim();
+    const parsedCommand = parseQuickTaskCommand(title, catalog);
+    let resolvedPriority = Number.isFinite(taskPriority) ? taskPriority : 3;
+    let details = detailsBase;
+
     if ((repoValue === "*" || !repoValue) && parsedCommand) {
-      repoValue = parsedCommand.repo;
-      queueTitle = parsedCommand.title;
-      if (elements.taskQueueRepo) elements.taskQueueRepo.value = repoValue;
+      if (parsedCommand.resolvedRepo && parsedCommand.repo) {
+        repoValue = parsedCommand.repo;
+      }
+      queueTitle = parsedCommand.title || queueTitle;
+      resolvedPriority = parsedCommand.isInterrupt ? 1 : resolvedPriority;
+      if (elements.taskQueueRepo && parsedCommand.resolvedRepo) {
+        elements.taskQueueRepo.value = repoValue;
+      } else if (parsedCommand.repoHint && parsedCommand.repoHint !== repoValue) {
+        const detailHint = `Could not exactly match repo "${parsedCommand.repoHint}"`;
+        details = details ? `${details}\n${detailHint}` : detailHint;
+      }
+    } else if (!repoValue || repoValue === "*") {
+      // Keep wildcard to allow global tasks and avoid accidental mis-targeting.
     }
+
+    const queuePriority = parsedCommand?.isInterrupt
+      ? 1
+      : clampInt(Number.isFinite(resolvedPriority) ? resolvedPriority : 3, 3, 1, 5);
 
     const payload = {
       repo: repoValue,
       title: queueTitle,
-      details: String(elements.taskQueueDetails?.value || "").trim(),
-      priority: Number(elements.taskQueuePriority?.value || 3),
+      details,
+      priority: queuePriority,
+      is_interrupt: Boolean(parsedCommand?.isInterrupt),
       source: "control_plane",
     };
     await apiPost("/api/task_queue/add", payload);
@@ -3014,7 +3337,7 @@ async function addTaskQueueItem() {
       run_id: "",
       severity: "ok",
       title: "Task queued",
-      detail: queueTitle,
+      detail: `${queueTitle}${Boolean(parsedCommand?.isInterrupt) ? " (interrupt priority)" : ""}`,
     });
   } catch (error) {
     toastAlert({
@@ -4347,6 +4670,107 @@ function controlRequestPayload() {
   };
 }
 
+function readStartRunPrefs() {
+  try {
+    const raw = localStorage.getItem(START_RUN_PREFS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeStartRunPrefs(payload) {
+  if (!payload || typeof payload !== "object") return;
+  try {
+    localStorage.setItem(START_RUN_PREFS_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function buildStartRunPrefsFromPayload(payload) {
+  const request = payload && typeof payload === "object" ? payload : {};
+  const mode = state.startRunMode === "custom" ? "custom" : "auto";
+  const selectedRepos = mode === "custom" && Array.isArray(request.repos)
+    ? request.repos
+        .slice(0, 2500)
+        .map((repo) => ({
+          name: String(repo?.name || "").trim(),
+          path: String(repo?.path || "").trim(),
+          tasks_per_repo: clampInt(repo?.tasks_per_repo, 0, 0, 1000),
+          max_cycles_per_run: clampInt(repo?.max_cycles_per_run, 0, 0, 10000),
+          max_commits_per_run: clampInt(repo?.max_commits_per_run, 0, 0, 10000),
+        }))
+        .filter((repo) => Boolean(repo.path || repo.name))
+    : [];
+
+  return {
+    version: 1,
+    updated_at: new Date().toISOString(),
+    mode,
+    code_root: String(elements.startRunCodeRoot?.value || "").trim(),
+    parallel_repos: clampInt(request.parallel_repos, 5, 1, 64),
+    max_cycles: clampInt(request.max_cycles, 30, 1, 10000),
+    tasks_per_repo: clampInt(request.tasks_per_repo, 0, 0, 1000),
+    default_max_cycles_per_repo: clampInt(elements.startRunMaxCyclesPerRepo?.value, 0, 0, 10000),
+    default_max_commits_per_repo: clampInt(elements.startRunMaxCommitsPerRepo?.value, 0, 0, 10000),
+    selected_repos: selectedRepos,
+  };
+}
+
+function applyStartRunPrefsInputs(prefs) {
+  const safePrefs = prefs && typeof prefs === "object" ? prefs : null;
+  if (!safePrefs) return;
+  if (safePrefs.code_root) {
+    elements.startRunCodeRoot.value = String(safePrefs.code_root);
+  }
+  elements.startRunParallelRepos.value = String(clampInt(safePrefs.parallel_repos, 5, 1, 64));
+  elements.startRunMaxCycles.value = String(clampInt(safePrefs.max_cycles, 30, 1, 10000));
+  elements.startRunTasksPerRepo.value = String(clampInt(safePrefs.tasks_per_repo, 0, 0, 1000));
+  elements.startRunMaxCyclesPerRepo.value = String(clampInt(safePrefs.default_max_cycles_per_repo, 0, 0, 10000));
+  elements.startRunMaxCommitsPerRepo.value = String(clampInt(safePrefs.default_max_commits_per_repo, 0, 0, 10000));
+  setStartRunMode(safePrefs.mode === "custom" ? "custom" : "auto");
+}
+
+function applyStartRunPrefsSelection(prefs) {
+  const safePrefs = prefs && typeof prefs === "object" ? prefs : null;
+  if (!safePrefs || safePrefs.mode !== "custom") return;
+  ensureStartRunSelectionInitialized(false);
+  const selectedByKey = new Map();
+  (safePrefs.selected_repos || []).forEach((repo) => {
+    const path = String(repo?.path || "").trim();
+    const name = String(repo?.name || "").trim();
+    if (path) {
+      selectedByKey.set(path, repo);
+      return;
+    }
+    if (name) selectedByKey.set(name, repo);
+  });
+  if (!selectedByKey.size) return;
+
+  Object.keys(state.startRunSelection || {}).forEach((key) => {
+    const selection = state.startRunSelection[key] || {};
+    const match = selectedByKey.get(key);
+    if (!match) {
+      state.startRunSelection[key] = {
+        ...selection,
+        enabled: false,
+      };
+      return;
+    }
+    state.startRunSelection[key] = {
+      ...selection,
+      enabled: true,
+      tasks_per_repo: clampInt(match.tasks_per_repo, clampInt(selection.tasks_per_repo, 0, 0, 1000), 0, 1000),
+      max_cycles_per_run: clampInt(match.max_cycles_per_run, clampInt(selection.max_cycles_per_run, 0, 0, 10000), 0, 10000),
+      max_commits_per_run: clampInt(match.max_commits_per_run, clampInt(selection.max_commits_per_run, 0, 0, 10000), 0, 10000),
+    };
+  });
+}
+
 function repoCatalogKey(repo) {
   return String(repo?.path || repo?.name || "");
 }
@@ -5075,6 +5499,7 @@ async function loadLocalRepos(force = false) {
 }
 
 async function openStartRunModal(action = "start") {
+  const savedPrefs = readStartRunPrefs();
   state.startRunAction = String(action || "start");
   setCommandPaletteOpen(false);
   setShortcutsOpen(false);
@@ -5085,7 +5510,8 @@ async function openStartRunModal(action = "start") {
   elements.startRunTasksPerRepo.value = String(clampInt(elements.controlTasksPerRepo.value, 0, 0, 1000));
   elements.startRunMaxCyclesPerRepo.value = "0";
   elements.startRunMaxCommitsPerRepo.value = "0";
-  state.startRunMode = "auto";
+  setStartRunMode("auto");
+  applyStartRunPrefsInputs(savedPrefs);
   state.startRunSearch = "";
   state.githubSearch = "";
   elements.startRunSearch.value = "";
@@ -5163,6 +5589,8 @@ async function openStartRunModal(action = "start") {
   }
 
   rebuildStartRunCatalogFromSources();
+  ensureStartRunSelectionInitialized(false);
+  applyStartRunPrefsSelection(savedPrefs);
   if (state.repoCatalog.length) {
     renderStartRunRepoTable();
   } else {
@@ -5252,6 +5680,7 @@ function setControlBusy(busy) {
 
 async function runControlAction(action, options = {}) {
   const payloadOverride = options && typeof options === "object" ? options.payloadOverride : null;
+  const apiAction = action === "stop_force" ? "stop" : action;
   setControlBusy(true);
   try {
     let payload = {};
@@ -5261,13 +5690,17 @@ async function runControlAction(action, options = {}) {
     if (action === "stop") {
       payload = { force: false, wait_seconds: 12 };
     }
+    if (action === "stop_force") {
+      payload = { force: true, wait_seconds: 20 };
+    }
     if (action === "normalize") {
       payload = { force: true, wait_seconds: 8 };
     }
-    const result = await apiPost(`/api/control/${action}`, payload);
+    const result = await apiPost(`/api/control/${apiAction}`, payload);
     renderControlStatus(result.control_status || state.controlStatus || {});
     await loadSnapshot();
     await loadRepoInsights(true);
+    await loadLaunchDiagnostics(true);
     return { ok: true, result };
   } catch (error) {
     console.error(error);
@@ -5465,6 +5898,9 @@ function renderSnapshot(snapshot) {
   if (Date.now() - state.taskQueueUpdatedAt > TASK_QUEUE_REFRESH_MS) {
     void loadTaskQueue(false);
   }
+  if (Date.now() - state.launchDiagnosticsUpdatedAt > LAUNCH_DIAGNOSTICS_REFRESH_MS) {
+    void loadLaunchDiagnostics(false);
+  }
   if (state.commandPaletteOpen) {
     renderCommandPalette();
   }
@@ -5544,6 +5980,7 @@ async function refreshNow() {
     if (state.selectedRepoName) await loadRepoDetails(state.selectedRepoName, true);
     await loadNotificationEvents(true);
     await loadTaskQueue(true);
+    await loadLaunchDiagnostics(true);
     renderStreamStatus("manual refresh complete");
     return true;
   } catch (error) {
@@ -5801,6 +6238,7 @@ async function bootstrap() {
     await loadNotificationConfig();
     await loadNotificationEvents(true);
     await loadTaskQueue(true);
+    await loadLaunchDiagnostics(true);
     try {
       await loadReposCatalog(true);
     } catch (error) {
@@ -6143,6 +6581,10 @@ elements.controlStopBtn.addEventListener("click", async () => {
   await runControlAction("stop");
 });
 
+elements.controlForceStopBtn.addEventListener("click", async () => {
+  await runControlAction("stop_force");
+});
+
 elements.controlRestartBtn.addEventListener("click", async () => {
   await runControlAction("restart");
 });
@@ -6150,6 +6592,36 @@ elements.controlRestartBtn.addEventListener("click", async () => {
 elements.controlNormalizeBtn.addEventListener("click", async () => {
   await runControlAction("normalize");
 });
+
+if (elements.routeOpenLaunchBtn) {
+  elements.routeOpenLaunchBtn.addEventListener("click", async () => {
+    await openRunLauncherPage("start");
+  });
+}
+
+if (elements.routeStopBtn) {
+  elements.routeStopBtn.addEventListener("click", async () => {
+    await runControlAction("stop");
+  });
+}
+
+if (elements.routeForceStopBtn) {
+  elements.routeForceStopBtn.addEventListener("click", async () => {
+    await runControlAction("stop_force");
+  });
+}
+
+if (elements.routeRestartBtn) {
+  elements.routeRestartBtn.addEventListener("click", async () => {
+    await runControlAction("restart");
+  });
+}
+
+if (elements.launchDiagRefreshBtn) {
+  elements.launchDiagRefreshBtn.addEventListener("click", async () => {
+    await loadLaunchDiagnostics(true);
+  });
+}
 
 elements.startRunCloseBtn.addEventListener("click", () => {
   closeStartRunModal();
@@ -6328,6 +6800,7 @@ elements.startRunConfirmBtn.addEventListener("click", async () => {
   const result = await runControlAction(state.startRunAction || "start", { payloadOverride: payload });
   setStartRunModalBusy(false);
   if (result?.ok) {
+    writeStartRunPrefs(buildStartRunPrefsFromPayload(payload));
     closeStartRunModal();
   }
 });

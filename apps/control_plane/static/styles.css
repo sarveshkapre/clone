@@ -259,6 +259,16 @@ body[data-route]:not([data-route="overview"]) .jump-nav {
   flex-wrap: wrap;
 }
 
+.route-control-bar {
+  border-top: 1px solid var(--line);
+  padding: 8px 12px 10px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
 .route-nav button {
   padding: 5px 12px;
   font-size: 10.5px;
@@ -836,6 +846,36 @@ kbd {
   flex-wrap: wrap;
 }
 
+.diagnostics-panel .inline-controls {
+  padding: 0 12px 8px;
+}
+
+.diagnostics-grid {
+  padding: 0 12px 12px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.diagnostics-grid article {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 10px;
+}
+
+.diag-block {
+  margin: 6px 0 0;
+  min-height: 130px;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
 .legacy-run-inputs {
   display: none;
 }
@@ -944,6 +984,12 @@ input[type="password"] {
   color: var(--ok);
 }
 
+.state-badge.interrupt {
+  border-color: rgba(151, 54, 0, 0.35);
+  background: rgba(151, 54, 0, 0.09);
+  color: #8f3d06;
+}
+
 .state-badge.skipped {
   border-color: rgba(141, 63, 22, 0.3);
   background: var(--warn-soft);
@@ -1003,7 +1049,9 @@ button:disabled {
 
 #refreshNowBtn,
 #notifySaveBtn,
-#controlStartBtn {
+#controlStartBtn,
+#routeOpenLaunchBtn,
+#launchDiagRefreshBtn {
   background: #131a16;
   color: #f5f6f1;
   border-color: #131a16;
@@ -1017,15 +1065,25 @@ button:disabled {
 
 #refreshNowBtn:hover,
 #notifySaveBtn:hover,
-#controlStartBtn:hover {
+#controlStartBtn:hover,
+#routeOpenLaunchBtn:hover,
+#launchDiagRefreshBtn:hover {
   background: #1a221d;
   border-color: #1a221d;
 }
 
-#controlStopBtn {
+#controlStopBtn,
+#routeStopBtn {
   background: rgba(148, 67, 34, 0.12);
   border-color: rgba(148, 67, 34, 0.32);
   color: var(--warn);
+}
+
+#controlForceStopBtn,
+#routeForceStopBtn {
+  background: rgba(163, 18, 18, 0.12);
+  border-color: rgba(163, 18, 18, 0.32);
+  color: #a31212;
 }
 
 #controlNormalizeBtn {
