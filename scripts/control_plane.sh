@@ -9,6 +9,7 @@ PORT="${CLONE_CONTROL_PLANE_PORT:-8787}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 STOP_TIMEOUT_SECONDS="${STOP_TIMEOUT_SECONDS:-10}"
 TAIL_LINES="${TAIL_LINES:-200}"
+CLEANUP_STALE_DAYS="${CLEANUP_STALE_DAYS:-2}"
 RUNTIME_STACK="${CLONE_RUNTIME_STACK:-v1}"
 RUNTIME_SUPERVISOR_SCRIPT="$CLONE_ROOT/scripts/runtime_supervisor.mjs"
 V2_API_BASE_URL="${CLONE_V2_API_BASE_URL:-}"
@@ -48,6 +49,7 @@ Commands:
   stop                    Stop server and cleanup orphan processes for this port.
   restart                 Restart server.
   status                  Show process and health status.
+  cleanup                 Remove stale local runtime artifacts.
   tail [ui|run|events|launcher]
                           Tail logs (default: ui).
   help                    Show this help.
@@ -68,6 +70,7 @@ Environment overrides:
   PYTHON_BIN                  (default: python3)
   STOP_TIMEOUT_SECONDS        (default: 10)
   TAIL_LINES                  (default: 200)
+  CLEANUP_STALE_DAYS          (default: 2; used by cleanup command)
 EOF
 }
 
@@ -396,6 +399,45 @@ restart() {
   start
 }
 
+cleanup_artifacts() {
+  mkdir -p "$LOGS_DIR"
+  local removed=0 pid_file pid path pattern
+  for pid_file in "$LOGS_DIR"/control-plane-ui-*.pid "$LOGS_DIR"/clone-runtime-v2-supervisor.pid; do
+    [[ -f "$pid_file" ]] || continue
+    pid="$(head -n 1 "$pid_file" 2>/dev/null | tr -d '[:space:]')"
+    if ! [[ "$pid" =~ ^[0-9]+$ ]] || ! pid_is_alive "$pid"; then
+      rm -f "$pid_file"
+      echo "Removed stale pid file: $pid_file"
+      removed=$((removed + 1))
+    fi
+  done
+
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    rm -f "$path"
+    echo "Removed stale run snapshot: $path"
+    removed=$((removed + 1))
+  done < <(find "$LOGS_DIR" -maxdepth 1 -type f -name "run-*-repos.json" -mtime +"$CLEANUP_STALE_DAYS" 2>/dev/null || true)
+
+  while IFS= read -r path; do
+    [[ -n "$path" ]] || continue
+    rm -f "$path"
+    echo "Removed stale temp file: $path"
+    removed=$((removed + 1))
+  done < <(find "$LOGS_DIR" -maxdepth 1 -type f -name "*.tmp" -mtime +"$CLEANUP_STALE_DAYS" 2>/dev/null || true)
+
+  for pattern in "run-*-workers" "run-*-repo-locks" "run-*-repo-progress"; do
+    while IFS= read -r path; do
+      [[ -n "$path" ]] || continue
+      rm -rf "$path"
+      echo "Removed stale empty dir: $path"
+      removed=$((removed + 1))
+    done < <(find "$LOGS_DIR" -maxdepth 1 -type d -name "$pattern" -empty -mtime +"$CLEANUP_STALE_DAYS" 2>/dev/null || true)
+  done
+
+  echo "Cleanup complete: removed=$removed logs_dir=$LOGS_DIR stale_days=$CLEANUP_STALE_DAYS"
+}
+
 tail_logs() {
   local target="${1:-ui}" file=""
   if runtime_v2_enabled; then
@@ -450,6 +492,9 @@ if runtime_v2_enabled; then
       runtime_v2_precheck
       runtime_v2_exec "$cmd"
       ;;
+    cleanup)
+      cleanup_artifacts
+      ;;
     tail)
       tail_logs "${2:-ui}"
       ;;
@@ -480,6 +525,9 @@ case "$cmd" in
     ;;
   status)
     status
+    ;;
+  cleanup)
+    cleanup_artifacts
     ;;
   tail)
     tail_logs "${2:-ui}"

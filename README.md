@@ -215,6 +215,7 @@ npm link
 clone precheck
 clone start
 clone status
+clone cleanup
 clone logs ui
 ```
 
@@ -225,6 +226,7 @@ cd /path/to/Clone
 npm run clone:precheck
 npm run clone:start
 npm run clone:status
+npm run clone:cleanup
 npm run clone:logs
 ```
 

@@ -27,7 +27,7 @@ case "$cmd" in
     shift || true
     exec "$CONTROL_PLANE_SH" tail "${1:-ui}"
     ;;
-  precheck|start|stop|restart|status|tail|help|-h|--help)
+  precheck|start|stop|restart|status|cleanup|tail|help|-h|--help)
     exec "$CONTROL_PLANE_SH" "$@"
     ;;
   *)
@@ -40,6 +40,7 @@ Usage:
   clone stop
   clone restart
   clone status
+  clone cleanup
   clone logs [ui|run|events|launcher]
   clone tail [ui|run|events|launcher]
 EOF
