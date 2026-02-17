@@ -215,6 +215,7 @@ npm link
 clone precheck
 clone start
 clone status
+clone logs ui
 ```
 
 NPM aliases (no global link required):
@@ -224,6 +225,7 @@ cd /path/to/Clone
 npm run clone:precheck
 npm run clone:start
 npm run clone:status
+npm run clone:logs
 ```
 
 Dark-launch runtime scaffold (Next.js web + worker) is available behind an explicit flag:

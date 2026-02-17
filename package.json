@@ -17,6 +17,7 @@
     "clone:stop": "./bin/clone stop",
     "clone:restart": "./bin/clone restart",
     "clone:status": "./bin/clone status",
+    "clone:logs": "./bin/clone logs ui",
     "clone:tail": "./bin/clone tail ui",
     "web:dev": "npm run dev --workspace @clone/web",
     "web:build": "npm run build --workspace @clone/web",
