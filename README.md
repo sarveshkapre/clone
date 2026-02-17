@@ -308,6 +308,12 @@ Refresh stack world-state snapshot (live npm registry):
 npm run stack:world
 ```
 
+Run open-source readiness checks (no hardcoded user paths / legacy repo file dependency):
+
+```bash
+npm run check:oss
+```
+
 Use `IGNORED_REPOS_CSV` for durable and one-off overrides.
 
 ```bash
