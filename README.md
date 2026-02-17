@@ -288,6 +288,7 @@ Highlights:
 ## Docs
 
 - `docs/observability.md`
+- `docs/stack_world_snapshot.md`
 - `docs/readme_policy.md`
 - `docs/ideas.md`
 - `docs/intents.md`
@@ -300,6 +301,12 @@ Highlights:
 - `UIUX.md`
 - `prompts/` (agent behavior)
 - `scripts/` (discovery + loop)
+
+Refresh stack world-state snapshot (live npm registry):
+
+```bash
+npm run stack:world
+```
 
 Use `IGNORED_REPOS_CSV` for durable and one-off overrides.
 

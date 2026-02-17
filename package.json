@@ -27,6 +27,7 @@
     "runtime:v2:run": "node scripts/runtime_supervisor.mjs run",
     "runtime:v2:start": "node scripts/runtime_supervisor.mjs start",
     "runtime:v2:stop": "node scripts/runtime_supervisor.mjs stop",
-    "runtime:v2:status": "node scripts/runtime_supervisor.mjs status"
+    "runtime:v2:status": "node scripts/runtime_supervisor.mjs status",
+    "stack:world": "./scripts/stack_world_snapshot.sh"
   }
 }
