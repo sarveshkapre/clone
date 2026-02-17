@@ -124,6 +124,19 @@ def to_bool(value: Any) -> bool:
     return text in {"1", "true", "yes", "y", "on"}
 
 
+def parse_csv_tokens(value: Any) -> set[str]:
+    if value is None:
+        return set()
+    text = str(value).strip()
+    if not text:
+        return set()
+    return {token.strip() for token in text.split(",") if token.strip()}
+
+
+def scan_ignored_dirs_from_env() -> set[str]:
+    return parse_csv_tokens(os.environ.get("CLONE_SCAN_IGNORE_DIRS"))
+
+
 def pid_is_alive(pid: int) -> bool:
     if pid <= 0:
         return False
@@ -346,6 +359,7 @@ def discover_local_git_repos(
     max_depth: int = 8,
     limit: int = 10000,
     catalog_paths: set[str] | None = None,
+    extra_ignored_dirs: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     ignored_dirs = {
         ".git",
@@ -365,6 +379,7 @@ def discover_local_git_repos(
         ".idea",
         ".vscode",
     }
+    ignored_dirs.update(extra_ignored_dirs or set())
     root_depth = len(code_root.parts)
     discovered: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -680,7 +695,13 @@ class CloneMonitor:
         if not repos:
             code_root = resolve_default_code_root(self.clone_root, self.repos_file)
             if code_root.exists() and code_root.is_dir():
-                repos = discover_local_git_repos(code_root=code_root, max_depth=8, limit=10000, catalog_paths=None)
+                repos = discover_local_git_repos(
+                    code_root=code_root,
+                    max_depth=8,
+                    limit=10000,
+                    catalog_paths=None,
+                    extra_ignored_dirs=scan_ignored_dirs_from_env(),
+                )
 
         with self._cache_lock:
             self._repos_cache = (mtime_ns, repos)
@@ -2263,6 +2284,7 @@ class RunController:
             max_depth=max_depth,
             limit=limit,
             catalog_paths=catalog_paths,
+            extra_ignored_dirs=scan_ignored_dirs_from_env(),
         )
         return {
             "ok": True,
@@ -3730,7 +3752,12 @@ class APIHandler(SimpleHTTPRequestHandler):
         if scan_enabled:
             scan_started = time.time()
             try:
-                discovered = discover_local_git_repos(code_root=code_root, max_depth=max_depth, limit=scan_limit)
+                discovered = discover_local_git_repos(
+                    code_root=code_root,
+                    max_depth=max_depth,
+                    limit=scan_limit,
+                    extra_ignored_dirs=scan_ignored_dirs_from_env(),
+                )
                 local_count = len(discovered)
                 local_sample = discovered[:25]
             except OSError as exc:

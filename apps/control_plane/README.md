@@ -114,6 +114,7 @@ Runtime files under `logs/`:
 - Commit stream uses local `git log` calls per discovered repositories.
 - GitHub import in Run Launcher uses local `gh` CLI (`gh auth login` required) and works with any writable code-root path.
 - Local discovery in Run Launcher scans filesystem git repositories under `Code Root`; repository lists are dynamic (no hardcoded repo names).
+- Set `CLONE_SCAN_IGNORE_DIRS` to a comma-separated list of directory names to skip during local repo discovery scans.
 - No authentication is required for local use.
 - Non-JSON repos files are parsed with a built-in YAML-like fallback parser (no `jq` needed).
 - Control actions are local-only and target the run loop script in this Clone workspace.

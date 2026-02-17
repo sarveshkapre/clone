@@ -241,6 +241,7 @@ By default v2 starts bundled API + web + worker (`api:8787`, `web:3000`). Open [
 
 Managed repo catalog files are optional for the Control Plane launcher.
 If no managed repos file exists, Clone auto-discovers local git repos from `Code Root`.
+Use `CLONE_SCAN_IGNORE_DIRS` (comma-separated directory names) to exclude heavy folders during discovery scans.
 
 Stop / restart:
 
