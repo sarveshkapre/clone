@@ -372,6 +372,8 @@ const state = {
   startRunMode: "auto",
   startRunSearch: "",
   startRunSelection: {},
+  startRunServerPreset: null,
+  startRunServerPresetUpdatedAt: 0,
   githubStatus: null,
   githubStatusUpdatedAt: 0,
   githubRepoCatalog: [],
@@ -4671,6 +4673,21 @@ function controlRequestPayload() {
 }
 
 function readStartRunPrefs() {
+  const serverPreset = state.startRunServerPreset;
+  if (serverPreset && typeof serverPreset === "object") {
+    return {
+      version: 1,
+      updated_at: String(serverPreset.updated_at || ""),
+      mode: String(serverPreset.mode || "auto"),
+      code_root: String(serverPreset.code_root || ""),
+      parallel_repos: clampInt(serverPreset.parallel_repos, 5, 1, 64),
+      max_cycles: clampInt(serverPreset.max_cycles, 30, 1, 10000),
+      tasks_per_repo: clampInt(serverPreset.tasks_per_repo, 0, 0, 1000),
+      default_max_cycles_per_repo: 0,
+      default_max_commits_per_repo: 0,
+      selected_repos: Array.isArray(serverPreset.selected_repos) ? serverPreset.selected_repos : [],
+    };
+  }
   try {
     const raw = localStorage.getItem(START_RUN_PREFS_STORAGE_KEY);
     if (!raw) return null;
@@ -4688,6 +4705,54 @@ function writeStartRunPrefs(payload) {
     localStorage.setItem(START_RUN_PREFS_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     // Ignore storage failures.
+  }
+  void saveStartRunPrefsToServer(payload);
+}
+
+async function loadStartRunPrefsFromServer(force = false) {
+  if (!force && state.startRunServerPreset && Date.now() - state.startRunServerPresetUpdatedAt < 120000) {
+    return state.startRunServerPreset;
+  }
+  try {
+    const response = await fetch("/api/v1/presets?limit=5");
+    if (!response.ok) return state.startRunServerPreset;
+    const payload = await response.json();
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    if (items.length) {
+      state.startRunServerPreset = items[0];
+      state.startRunServerPresetUpdatedAt = Date.now();
+    }
+    return state.startRunServerPreset;
+  } catch {
+    return state.startRunServerPreset;
+  }
+}
+
+async function saveStartRunPrefsToServer(payload) {
+  if (!payload || typeof payload !== "object") return;
+  try {
+    const response = await fetch("/api/v1/presets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "default",
+        name: "default",
+        code_root: String(payload.code_root || "").trim(),
+        mode: String(payload.mode || "auto"),
+        parallel_repos: clampInt(payload.parallel_repos, 5, 1, 64),
+        max_cycles: clampInt(payload.max_cycles, 30, 1, 10000),
+        tasks_per_repo: clampInt(payload.tasks_per_repo, 0, 0, 1000),
+        selected_repos: Array.isArray(payload.selected_repos) ? payload.selected_repos : [],
+      }),
+    });
+    if (!response.ok) return;
+    const result = await response.json().catch(() => ({}));
+    if (result?.preset && typeof result.preset === "object") {
+      state.startRunServerPreset = result.preset;
+      state.startRunServerPresetUpdatedAt = Date.now();
+    }
+  } catch {
+    // Ignore server persistence failures and keep local fallback.
   }
 }
 
@@ -6238,6 +6303,7 @@ async function bootstrap() {
     await loadNotificationConfig();
     await loadNotificationEvents(true);
     await loadTaskQueue(true);
+    await loadStartRunPrefsFromServer(true);
     await loadLaunchDiagnostics(true);
     try {
       await loadReposCatalog(true);

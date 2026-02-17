@@ -1753,6 +1753,129 @@ class TaskQueueStore:
             return self._normalize_task(updated_task)
 
 
+class LaunchPresetStore:
+    VALID_MODES = {"auto", "custom"}
+
+    def __init__(self, preset_file: Path):
+        self.preset_file = preset_file
+        self._lock = threading.Lock()
+
+    def _read_payload(self) -> dict[str, Any]:
+        if not self.preset_file.exists():
+            return {"generated_at": iso_utc(utc_now()), "items": []}
+        try:
+            payload = json.loads(self.preset_file.read_text(encoding="utf-8", errors="replace"))
+        except json.JSONDecodeError:
+            return {"generated_at": iso_utc(utc_now()), "items": []}
+        if not isinstance(payload, dict):
+            return {"generated_at": iso_utc(utc_now()), "items": []}
+        items = payload.get("items")
+        if not isinstance(items, list):
+            payload["items"] = []
+        return payload
+
+    def _write_payload(self, payload: dict[str, Any]) -> None:
+        self.preset_file.parent.mkdir(parents=True, exist_ok=True)
+        self.preset_file.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    def _normalize_item(self, item: dict[str, Any]) -> dict[str, Any]:
+        mode = str(item.get("mode") or "auto").strip().lower()
+        if mode not in self.VALID_MODES:
+            mode = "auto"
+        payload = {
+            "id": str(item.get("id") or "").strip(),
+            "name": str(item.get("name") or "").strip(),
+            "code_root": str(item.get("code_root") or "").strip(),
+            "mode": mode,
+            "parallel_repos": max(1, min(safe_int(item.get("parallel_repos"), 5), 64)),
+            "max_cycles": max(1, min(safe_int(item.get("max_cycles"), 30), 10000)),
+            "tasks_per_repo": max(0, min(safe_int(item.get("tasks_per_repo"), 0), 1000)),
+            "selected_repos": item.get("selected_repos") if isinstance(item.get("selected_repos"), list) else [],
+            "created_at": str(item.get("created_at") or ""),
+            "updated_at": str(item.get("updated_at") or ""),
+        }
+        return payload
+
+    def list_presets(self, limit: int = 200) -> list[dict[str, Any]]:
+        with self._lock:
+            payload = self._read_payload()
+            items = [self._normalize_item(item) for item in payload.get("items", []) if isinstance(item, dict)]
+            items.sort(key=lambda item: str(item.get("updated_at") or ""), reverse=True)
+            return items[: max(1, min(limit, 5000))]
+
+    def upsert_preset(self, request: dict[str, Any]) -> dict[str, Any]:
+        name = str(request.get("name") or "").strip()
+        code_root = str(request.get("code_root") or "").strip()
+        if not name:
+            raise ValueError("name is required")
+        if not code_root:
+            raise ValueError("code_root is required")
+
+        mode = str(request.get("mode") or "auto").strip().lower()
+        if mode not in self.VALID_MODES:
+            mode = "auto"
+        selected_repos = request.get("selected_repos") if isinstance(request.get("selected_repos"), list) else []
+
+        with self._lock:
+            payload = self._read_payload()
+            items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+            existing_ids = {str(item.get("id") or "").strip() for item in items}
+            preset_id = str(request.get("id") or "").strip()
+            if not preset_id:
+                seed = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "preset"
+                candidate = seed
+                suffix = 1
+                while candidate in existing_ids:
+                    suffix += 1
+                    candidate = f"{seed}-{suffix}"
+                preset_id = candidate
+
+            now = iso_utc(utc_now())
+            normalized = {
+                "id": preset_id,
+                "name": name,
+                "code_root": code_root,
+                "mode": mode,
+                "parallel_repos": max(1, min(safe_int(request.get("parallel_repos"), 5), 64)),
+                "max_cycles": max(1, min(safe_int(request.get("max_cycles"), 30), 10000)),
+                "tasks_per_repo": max(0, min(safe_int(request.get("tasks_per_repo"), 0), 1000)),
+                "selected_repos": selected_repos[:5000],
+                "created_at": now,
+                "updated_at": now,
+            }
+
+            replaced = False
+            for idx, item in enumerate(items):
+                if str(item.get("id") or "").strip() != preset_id:
+                    continue
+                normalized["created_at"] = str(item.get("created_at") or now)
+                items[idx] = normalized
+                replaced = True
+                break
+            if not replaced:
+                items.append(normalized)
+
+            payload["generated_at"] = now
+            payload["items"] = items
+            self._write_payload(payload)
+            return self._normalize_item(normalized)
+
+    def delete_preset(self, preset_id: str) -> bool:
+        normalized_id = str(preset_id or "").strip()
+        if not normalized_id:
+            return False
+        with self._lock:
+            payload = self._read_payload()
+            items = [item for item in payload.get("items", []) if isinstance(item, dict)]
+            next_items = [item for item in items if str(item.get("id") or "").strip() != normalized_id]
+            if len(next_items) == len(items):
+                return False
+            payload["generated_at"] = iso_utc(utc_now())
+            payload["items"] = next_items
+            self._write_payload(payload)
+            return True
+
+
 class RunController:
     def __init__(self, clone_root: Path, logs_dir: Path, monitor: CloneMonitor):
         self.clone_root = clone_root
@@ -3432,6 +3555,7 @@ class APIHandler(SimpleHTTPRequestHandler):
     notifier: NotificationManager
     agent: AgentManager
     task_queue: TaskQueueStore
+    preset_store: LaunchPresetStore
     static_dir: Path
     launch_info: dict[str, Any]
 
@@ -3502,6 +3626,131 @@ class APIHandler(SimpleHTTPRequestHandler):
             "run_pid": safe_int(status.get("run_pid"), 0),
             "updated_at": iso_utc(utc_now()),
         }
+
+    def _v1_repos_payload(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        source = str(query.get("source", ["all"])[0] or "all").strip().lower()
+        if source not in {"all", "local", "managed"}:
+            source = "all"
+        limit = max(1, min(safe_int(query.get("limit", ["200"])[0], 200), 5000))
+        page = max(1, safe_int(query.get("page", ["1"])[0], 1))
+        code_root = str(query.get("code_root", [""])[0] or "").strip()
+
+        merged: dict[str, dict[str, Any]] = {}
+        if source in {"all", "managed"}:
+            for item in self.monitor.repos_catalog():
+                if not isinstance(item, dict):
+                    continue
+                key = str(item.get("path") or item.get("name") or "")
+                if not key:
+                    continue
+                payload = dict(item)
+                payload["source"] = "managed"
+                merged[key] = payload
+        if source in {"all", "local"}:
+            local_payload = self.controller.local_repos(
+                {
+                    "code_root": code_root,
+                    "max_depth": query.get("max_depth", ["8"])[0],
+                    "limit": query.get("scan_limit", ["15000"])[0],
+                }
+            )
+            for item in local_payload.get("repos", []):
+                if not isinstance(item, dict):
+                    continue
+                key = str(item.get("path") or item.get("name") or "")
+                if not key:
+                    continue
+                payload = dict(item)
+                payload["source"] = "local"
+                if key in merged:
+                    base = dict(merged[key])
+                    base.update(payload)
+                    payload = base
+                    if source == "all":
+                        payload["source"] = "all"
+                merged[key] = payload
+
+        items = list(merged.values())
+        items.sort(key=lambda item: str(item.get("name") or "").lower())
+        total = len(items)
+        start = (page - 1) * limit
+        paged_items = items[start : start + limit]
+        return {
+            "items": paged_items,
+            "total": total,
+            "page": page,
+            "limit": limit,
+            "has_more": start + limit < total,
+            "source": source,
+            "generated_at": iso_utc(utc_now()),
+        }
+
+    def _v1_runs_payload(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        limit = max(1, min(safe_int(query.get("limit", ["60"])[0], 60), 500))
+        runs = self.monitor.list_runs(limit=limit)
+        items: list[dict[str, Any]] = []
+        for item in runs:
+            run = with_effective_run_fields(item) or item
+            items.append(
+                {
+                    "id": str(run.get("run_id") or ""),
+                    "state": str(run.get("state") or "unknown"),
+                    "state_raw": str(run.get("state_raw") or run.get("state") or "unknown"),
+                    "started_at": str(run.get("started_at") or ""),
+                    "ended_at": str(run.get("ended_at") or ""),
+                    "duration_seconds": safe_int(run.get("duration_seconds"), 0),
+                    "repo_count": safe_int(run.get("repo_count"), 0),
+                    "repos_changed": safe_int(run.get("repos_changed_est"), 0),
+                    "repos_no_change": safe_int(run.get("repos_no_change"), 0),
+                    "run_online": bool(run.get("run_online")),
+                }
+            )
+        return {"items": items, "limit": limit, "generated_at": iso_utc(utc_now())}
+
+    def _v1_tasks_payload(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        status = str(query.get("status", [""])[0] or "")
+        repo = str(query.get("repo", [""])[0] or "")
+        limit = max(1, min(safe_int(query.get("limit", ["200"])[0], 200), 1000))
+        return {
+            "items": self.task_queue.list_tasks(status=status, repo=repo, limit=limit),
+            "summary": self.task_queue.summary(limit=20),
+            "generated_at": iso_utc(utc_now()),
+        }
+
+    def _send_v1_sse(self, parsed_query: dict[str, list[str]]) -> None:
+        poll = float(parsed_query.get("poll", ["5"])[0])
+        poll = max(1.0, min(poll, 60.0))
+        cursor = 0
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+
+        while True:
+            snapshot = self.monitor.snapshot(
+                history_limit=safe_int(parsed_query.get("history_limit", ["25"])[0], 25),
+                commit_hours=safe_int(parsed_query.get("commit_hours", ["2"])[0], 2),
+                commit_limit=safe_int(parsed_query.get("commit_limit", ["180"])[0], 180),
+                event_limit=safe_int(parsed_query.get("event_limit", ["240"])[0], 240),
+            )
+            snapshot = self._attach_runtime_payload(snapshot, send_notifications=False)
+            cursor += 1
+            envelope = {
+                "topic": "system",
+                "type": "snapshot",
+                "ts": iso_utc(utc_now()),
+                "cursor": str(cursor),
+                "payload": snapshot,
+            }
+            frame = f"data: {json.dumps(envelope, separators=(',', ':'))}\n\n".encode("utf-8")
+            try:
+                self.wfile.write(frame)
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                break
+            time.sleep(poll)
 
     def _read_json_body(self) -> dict[str, Any]:
         raw_len = safe_int(self.headers.get("Content-Length"), 0)
@@ -3604,6 +3853,49 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         if normalized_path in {"/api/v1/system/launch-diagnostics", "/api/v1/system/launch_diagnostics"}:
             self._send_json(self._launch_diagnostics_payload())
+            return
+
+        if normalized_path == "/api/v1/repos":
+            self._send_json(self._v1_repos_payload(query))
+            return
+
+        if normalized_path == "/api/v1/presets":
+            limit = max(1, min(safe_int(query.get("limit", ["200"])[0], 200), 5000))
+            self._send_json({"items": self.preset_store.list_presets(limit=limit), "generated_at": iso_utc(utc_now())})
+            return
+
+        if normalized_path == "/api/v1/runs":
+            self._send_json(self._v1_runs_payload(query))
+            return
+
+        if normalized_path.startswith("/api/v1/runs/"):
+            segments = [segment for segment in normalized_path.split("/") if segment]
+            if len(segments) == 4:
+                run_id = segments[3].strip()
+                if not run_id:
+                    self._send_json({"error": "run_id is required"}, status=400)
+                    return
+                payload = self.monitor.run_details(
+                    run_id=run_id,
+                    commit_limit=safe_int(query.get("commit_limit", ["120"])[0], 120),
+                    run_log_limit=safe_int(query.get("run_log_limit", ["220"])[0], 220),
+                    event_limit=safe_int(query.get("event_limit", ["300"])[0], 300),
+                    alert_stall_minutes=safe_int(query.get("alert_stall_minutes", ["15"])[0], 15),
+                    alert_no_commit_minutes=safe_int(query.get("alert_no_commit_minutes", ["60"])[0], 60),
+                    alert_lock_skip_threshold=safe_int(query.get("alert_lock_skip_threshold", ["25"])[0], 25),
+                )
+                if payload is None:
+                    self._send_json({"error": f"run not found: {run_id}"}, status=404)
+                    return
+                self._send_json(payload)
+                return
+
+        if normalized_path == "/api/v1/tasks":
+            self._send_json(self._v1_tasks_payload(query))
+            return
+
+        if normalized_path == "/api/v1/stream":
+            self._send_v1_sse(query)
             return
 
         if normalized_path in {"/api/launch_diagnostics", "/api/system/launch_diagnostics"}:
@@ -3798,10 +4090,120 @@ class APIHandler(SimpleHTTPRequestHandler):
             self.path = "/index.html"
         return super().do_GET()
 
+    def do_DELETE(self) -> None:  # noqa: N802
+        parsed = urlparse(self.path)
+        parsed_path = parsed.path if parsed.path == "/" else parsed.path.rstrip("/")
+        if parsed_path.startswith("/api/v1/presets/"):
+            segments = [segment for segment in parsed_path.split("/") if segment]
+            if len(segments) == 4:
+                preset_id = segments[3].strip()
+                deleted = self.preset_store.delete_preset(preset_id)
+                if not deleted:
+                    self._send_json({"ok": False, "error": f"preset not found: {preset_id}"}, status=404)
+                    return
+                self._send_json({"ok": True, "deleted_id": preset_id, "generated_at": iso_utc(utc_now())})
+                return
+        self._send_json({"error": "not found"}, status=404)
+
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
         parsed_path = parsed.path if parsed.path == "/" else parsed.path.rstrip("/")
         request = self._read_json_body()
+
+        if parsed_path == "/api/v1/runs":
+            payload = self.controller.start_run(request)
+            status_code = 201 if payload.get("ok") else 409
+            if payload.get("ok"):
+                latest = with_effective_run_fields(self.monitor.latest_run()) or {}
+                response_payload = {
+                    "ok": True,
+                    "run": {
+                        "id": str(latest.get("run_id") or ""),
+                        "state": str(latest.get("state") or "starting"),
+                        "state_raw": str(latest.get("state_raw") or latest.get("state") or "starting"),
+                        "started_at": str(latest.get("started_at") or ""),
+                        "repo_count": safe_int(latest.get("repo_count"), 0),
+                    },
+                    "control_status": payload.get("control_status") or self.controller.status_payload(),
+                }
+                self._send_json(response_payload, status=status_code)
+            else:
+                self._send_json(payload, status=status_code)
+            return
+
+        if parsed_path.startswith("/api/v1/runs/"):
+            segments = [segment for segment in parsed_path.split("/") if segment]
+            if len(segments) == 5:
+                run_id = segments[3].strip()
+                action = segments[4].strip().lower()
+                if action == "stop":
+                    payload = self.controller.stop_run({"force": False, "wait_seconds": request.get("wait_seconds", 12)})
+                    if not payload.get("ok") and str(payload.get("error") or "").startswith("no active run loop process found"):
+                        payload = {
+                            "ok": True,
+                            "already_stopped": True,
+                            "run_id": run_id,
+                            "control_status": self.controller.status_payload(),
+                        }
+                    self._send_json(payload, status=200 if payload.get("ok") else 409)
+                    return
+                if action == "force-stop":
+                    payload = self.controller.stop_run({"force": True, "wait_seconds": request.get("wait_seconds", 20)})
+                    if not payload.get("ok") and str(payload.get("error") or "").startswith("no active run loop process found"):
+                        payload = {
+                            "ok": True,
+                            "already_stopped": True,
+                            "run_id": run_id,
+                            "control_status": self.controller.status_payload(),
+                        }
+                    self._send_json(payload, status=200 if payload.get("ok") else 409)
+                    return
+                if action == "restart":
+                    payload = self.controller.restart_run(request)
+                    self._send_json(payload, status=200 if payload.get("ok") else 409)
+                    return
+
+        if parsed_path == "/api/v1/tasks":
+            title = str(request.get("title") or "").strip()
+            if not title:
+                self._send_json({"ok": False, "error": "title is required"}, status=400)
+                return
+            try:
+                task = self.task_queue.add_task(
+                    title=title,
+                    details=str(request.get("details") or ""),
+                    repo=str(request.get("repo") or "*"),
+                    repo_path=str(request.get("repo_path") or ""),
+                    priority=safe_int(request.get("priority"), 3),
+                    is_interrupt=to_bool(request.get("is_interrupt")),
+                    source=str(request.get("source") or "api_v1"),
+                    task_id=str(request.get("id") or ""),
+                )
+            except ValueError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                return
+            self._send_json({"ok": True, "item": task, "summary": self.task_queue.summary(limit=20)}, status=201)
+            return
+
+        if parsed_path == "/api/v1/presets":
+            try:
+                preset = self.preset_store.upsert_preset(request)
+            except ValueError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                return
+            self._send_json({"ok": True, "preset": preset, "generated_at": iso_utc(utc_now())}, status=200)
+            return
+
+        if parsed_path.startswith("/api/v1/presets/"):
+            segments = [segment for segment in parsed_path.split("/") if segment]
+            if len(segments) == 5 and segments[4].strip().lower() == "delete":
+                preset_id = segments[3].strip()
+                deleted = self.preset_store.delete_preset(preset_id)
+                if not deleted:
+                    self._send_json({"ok": False, "error": f"preset not found: {preset_id}"}, status=404)
+                    return
+                self._send_json({"ok": True, "deleted_id": preset_id, "generated_at": iso_utc(utc_now())}, status=200)
+                return
 
         if parsed_path == "/api/control/start":
             payload = self.controller.start_run(request)
@@ -3955,6 +4357,7 @@ def make_handler(
     notifier: NotificationManager,
     agent: AgentManager,
     task_queue: TaskQueueStore,
+    preset_store: LaunchPresetStore,
     static_dir: Path,
     launch_info: dict[str, Any] | None = None,
 ):
@@ -3966,6 +4369,7 @@ def make_handler(
     BoundHandler.notifier = notifier
     BoundHandler.agent = agent
     BoundHandler.task_queue = task_queue
+    BoundHandler.preset_store = preset_store
     BoundHandler.static_dir = static_dir
     BoundHandler.launch_info = dict(launch_info or {})
     return BoundHandler
@@ -4028,6 +4432,7 @@ def main() -> int:
     notifier = NotificationManager(logs_dir=logs_dir)
     agent = AgentManager(logs_dir=logs_dir, controller=controller)
     task_queue = TaskQueueStore(queue_file=task_queue_file)
+    preset_store = LaunchPresetStore(preset_file=logs_dir / "launch-presets.json")
     launch_info = {
         "started_at": iso_utc(utc_now()),
         "host": str(args.host),
@@ -4035,7 +4440,7 @@ def main() -> int:
         "ui_log": str(logs_dir / "control-plane-ui.log"),
         "pid_file": str(logs_dir / f"control-plane-ui-{args.port}.pid"),
     }
-    handler = make_handler(monitor, controller, notifier, agent, task_queue, static_dir, launch_info=launch_info)
+    handler = make_handler(monitor, controller, notifier, agent, task_queue, preset_store, static_dir, launch_info=launch_info)
 
     server = ThreadingHTTPServer((args.host, args.port), handler)
     print(f"Clone Control Plane listening on http://{args.host}:{args.port}")
