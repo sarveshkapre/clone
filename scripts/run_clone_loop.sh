@@ -59,6 +59,9 @@ SPARK_MAX_TOUCHED_FILES="${SPARK_MAX_TOUCHED_FILES:-4}"
 SPARK_MAX_LINE_DELTA="${SPARK_MAX_LINE_DELTA:-240}"
 SPARK_MAX_TASK_WORDS="${SPARK_MAX_TASK_WORDS:-30}"
 SPARK_REQUIRE_VERIFY_HINT="${SPARK_REQUIRE_VERIFY_HINT:-1}"
+QUEUE_PREEMPT_ENABLED="${QUEUE_PREEMPT_ENABLED:-1}"
+QUEUE_PREEMPT_POLL_SECONDS="${QUEUE_PREEMPT_POLL_SECONDS:-12}"
+QUEUE_PREEMPT_INTERRUPT_RC="${QUEUE_PREEMPT_INTERRUPT_RC:-199}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IDEA_PROCESSOR_SCRIPT="${IDEA_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_ideas.sh}"
 INTENT_PROCESSOR_SCRIPT="${INTENT_PROCESSOR_SCRIPT:-$SCRIPT_DIR/process_intents.sh}"
@@ -245,6 +248,21 @@ fi
 
 if ! [[ "$SPARK_REQUIRE_VERIFY_HINT" =~ ^[01]$ ]]; then
   echo "SPARK_REQUIRE_VERIFY_HINT must be 0 or 1, got: $SPARK_REQUIRE_VERIFY_HINT" >&2
+  exit 1
+fi
+
+if ! [[ "$QUEUE_PREEMPT_ENABLED" =~ ^[01]$ ]]; then
+  echo "QUEUE_PREEMPT_ENABLED must be 0 or 1, got: $QUEUE_PREEMPT_ENABLED" >&2
+  exit 1
+fi
+
+if ! [[ "$QUEUE_PREEMPT_POLL_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "QUEUE_PREEMPT_POLL_SECONDS must be a positive integer, got: $QUEUE_PREEMPT_POLL_SECONDS" >&2
+  exit 1
+fi
+
+if ! [[ "$QUEUE_PREEMPT_INTERRUPT_RC" =~ ^[1-9][0-9]*$ ]]; then
+  echo "QUEUE_PREEMPT_INTERRUPT_RC must be a positive integer, got: $QUEUE_PREEMPT_INTERRUPT_RC" >&2
   exit 1
 fi
 
@@ -711,6 +729,9 @@ log_event INFO "Task queue file: $TASK_QUEUE_FILE"
 log_event INFO "Task queue max items per repo: $TASK_QUEUE_MAX_ITEMS_PER_REPO"
 log_event INFO "Task queue auto create: $TASK_QUEUE_AUTO_CREATE"
 log_event INFO "Task queue claim TTL minutes: $TASK_QUEUE_CLAIM_TTL_MINUTES"
+log_event INFO "Queue preemption enabled: $QUEUE_PREEMPT_ENABLED"
+log_event INFO "Queue preemption poll seconds: $QUEUE_PREEMPT_POLL_SECONDS"
+log_event INFO "Queue preemption interrupt return code: $QUEUE_PREEMPT_INTERRUPT_RC"
 log_event INFO "Spark model: $SPARK_MODEL"
 log_event INFO "Spark max claimed tasks: $SPARK_MAX_CLAIM_TASKS"
 log_event INFO "Spark max touched files: $SPARK_MAX_TOUCHED_FILES"
@@ -1326,6 +1347,65 @@ finalize_queue_tasks_for_repo() {
   log_event INFO "TASK_QUEUE pass=$pass_label done=$done_count blocked=$blocked_count requeued=$requeue_count"
 }
 
+find_interrupt_task_for_repo() {
+  local repo_name="$1"
+  local repo_path="$2"
+  local interrupt_task
+
+  if [[ ! -f "$TASK_QUEUE_FILE" ]]; then
+    return 1
+  fi
+
+  interrupt_task="$(
+    jq -r \
+      --arg repo_name "$repo_name" \
+      --arg repo_path "$repo_path" '
+        (.tasks // [])
+        | map(select((.status // "" | ascii_downcase) == "queued"))
+        | map(select((.is_interrupt // false) == true))
+        | map(
+            select(
+              ((.repo // "*" | ascii_downcase) == "*")
+              or ((.repo // "" | ascii_downcase) == ($repo_name | ascii_downcase))
+              or ((.repo_path // "") == $repo_path)
+            )
+          )
+        | sort_by((.priority // 3), (.created_at // ""))
+        | .[0].id // ""
+      ' "$TASK_QUEUE_FILE" 2>/dev/null | tr -d "\r\n"
+  )"
+  if [[ -z "$interrupt_task" ]]; then
+    return 1
+  fi
+  printf '%s\n' "$interrupt_task"
+  return 0
+}
+
+interrupt_codex_process() {
+  local pid="$1"
+  local wait_seconds=${2:-8}
+  local waited=0
+
+  if [[ -z "$pid" ]] || ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  kill -INT "$pid" 2>/dev/null || true
+  while (( waited < wait_seconds )); do
+    if ! kill -0 "$pid" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  kill -TERM "$pid" 2>/dev/null || true
+  sleep 1
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+}
+
 run_codex_session() {
   local model="$1"
   local repo_path="$2"
@@ -1335,6 +1415,14 @@ run_codex_session() {
   local run_log_file="$6"
   local -a codex_cmd
   local rc
+  local codex_pid
+  local repo_name
+  local pass_label
+  local interrupt_task_id
+  local preempt_requested=0
+
+  repo_name="$CURRENT_REPO"
+  pass_label="$CURRENT_PASS"
 
   codex_cmd=(codex exec --cd "$repo_path" --output-last-message "$last_message_file")
   if [[ -n "$CODEX_SANDBOX_FLAG" ]]; then
@@ -1345,8 +1433,27 @@ run_codex_session() {
   fi
   codex_cmd+=("$prompt_text")
 
-  "${codex_cmd[@]}" 2>&1 | tee -a "$run_log_file" "$pass_log_file"
-  rc="${PIPESTATUS[0]}"
+  "${codex_cmd[@]}" > >(tee -a "$run_log_file" "$pass_log_file") 2>&1 &
+  codex_pid=$!
+
+  while kill -0 "$codex_pid" 2>/dev/null; do
+    if (( QUEUE_PREEMPT_ENABLED == 1 )); then
+      interrupt_task_id="$(find_interrupt_task_for_repo "$repo_name" "$repo_path" || true)"
+      if [[ -n "$interrupt_task_id" ]]; then
+        preempt_requested=1
+        log_event INFO "QUEUE_INTERRUPT repo=$repo_name pass=$pass_label task=$interrupt_task_id"
+        interrupt_codex_process "$codex_pid"
+        break
+      fi
+    fi
+    sleep "$QUEUE_PREEMPT_POLL_SECONDS"
+  done
+
+  wait "$codex_pid"
+  rc="$?"
+  if (( preempt_requested == 1 )); then
+    rc="$QUEUE_PREEMPT_INTERRUPT_RC"
+  fi
   return "$rc"
 }
 
@@ -2391,6 +2498,7 @@ run_repo() {
   local queue_task_block queue_claimed_count
   local codex_model queue_task_mode codex_rc codex_full_needed
   local spark_files_changed spark_lines_changed
+  local queue_interrupt_triggered
   name="$(jq -r '.name' <<<"$repo_json")"
   path="$(jq -r '.path' <<<"$repo_json")"
   branch="$(jq -r '.branch // "main"' <<<"$repo_json")"
@@ -2697,6 +2805,7 @@ $ci_context
 PROMPT
 
   codex_full_needed=0
+  queue_interrupt_triggered=0
   TASKS_PER_REPO="$repo_tasks_per_repo" run_codex_session \
     "$codex_model" \
     "$path" \
@@ -2705,7 +2814,10 @@ PROMPT
     "$pass_log_file" \
     "$RUN_LOG"
   codex_rc="$?"
-  if (( codex_rc != 0 )); then
+  if (( codex_rc == QUEUE_PREEMPT_INTERRUPT_RC )); then
+    queue_interrupt_triggered=1
+    log_event WARN "INTERRUPT repo=$name pass=$pass_label reason=queue_task"
+  elif (( codex_rc != 0 )); then
     if [[ "$codex_model" == "$SPARK_MODEL" ]]; then
       log_event WARN "SPARK_EXEC_FAIL repo=$name pass=$pass_label model=$codex_model rc=$codex_rc"
       if [[ -n "$before_head" ]]; then
@@ -2772,6 +2884,13 @@ PROMPT
 
   if (( codex_full_needed == 2 )); then
     log_event WARN "FAIL repo=$name reason=codex_exec_full_model_failed_after_fallback pass=$pass_label pass_log=$pass_log_file"
+  fi
+
+  if (( queue_interrupt_triggered == 1 )); then
+    finalize_queue_tasks_for_repo "$pass_label" "$last_message_file"
+    log_event INFO "END repo=$name pass=$pass_label status=interrupted_queue_task"
+    set_status "repo_interrupted" "$name" "$path" "$pass_label"
+    return 0
   fi
 
   current_branch="$(git -C "$path" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
