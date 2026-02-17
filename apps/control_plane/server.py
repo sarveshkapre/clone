@@ -3707,6 +3707,56 @@ class APIHandler(SimpleHTTPRequestHandler):
             )
         return {"items": items, "limit": limit, "generated_at": iso_utc(utc_now())}
 
+    def _v1_repo_diagnostics_payload(self, query: dict[str, list[str]]) -> dict[str, Any]:
+        code_root_raw = str(query.get("code_root", [""])[0] or "").strip()
+        if code_root_raw:
+            code_root = Path(code_root_raw).expanduser()
+            if not code_root.is_absolute():
+                code_root = (self.monitor.clone_root / code_root).resolve()
+            else:
+                code_root = code_root.resolve()
+        else:
+            code_root = resolve_default_code_root(self.monitor.clone_root, self.monitor.repos_file)
+
+        scan_enabled = to_bool(query.get("scan", ["0"])[0])
+        max_depth = max(1, min(safe_int(query.get("max_depth", ["8"])[0], 8), 12))
+        scan_limit = max(1, min(safe_int(query.get("scan_limit", ["20000"])[0], 20000), 50000))
+
+        local_count = 0
+        local_sample: list[dict[str, Any]] = []
+        scan_duration_ms = 0
+        scan_error = ""
+
+        if scan_enabled:
+            scan_started = time.time()
+            try:
+                discovered = discover_local_git_repos(code_root=code_root, max_depth=max_depth, limit=scan_limit)
+                local_count = len(discovered)
+                local_sample = discovered[:25]
+            except OSError as exc:
+                scan_error = str(exc)
+            scan_duration_ms = max(0, int((time.time() - scan_started) * 1000))
+
+        managed = self.monitor.repos_catalog()
+        return {
+            "generated_at": iso_utc(utc_now()),
+            "repos_file": str(self.monitor.repos_file),
+            "repos_file_exists": self.monitor.repos_file.exists(),
+            "code_root": str(code_root),
+            "code_root_exists": code_root.exists(),
+            "managed_count": len(managed),
+            "managed_sample": managed[:25],
+            "scan": {
+                "enabled": scan_enabled,
+                "max_depth": max_depth,
+                "scan_limit": scan_limit,
+                "duration_ms": scan_duration_ms,
+                "count": local_count,
+                "error": scan_error,
+                "sample": local_sample,
+            },
+        }
+
     def _v1_active_run_payload(self) -> dict[str, Any]:
         latest = with_effective_run_fields(self.monitor.latest_run()) or {}
         status = self.controller.status_payload(latest)
@@ -3883,6 +3933,10 @@ class APIHandler(SimpleHTTPRequestHandler):
 
         if normalized_path == "/api/v1/repos":
             self._send_json(self._v1_repos_payload(query))
+            return
+
+        if normalized_path in {"/api/v1/repos/diagnostics", "/api/v1/repos/diagnostic"}:
+            self._send_json(self._v1_repo_diagnostics_payload(query))
             return
 
         if normalized_path == "/api/v1/presets":

@@ -62,6 +62,21 @@ type LaunchDiagnostics = {
   recent_log_errors?: string[];
 };
 
+type RepoDiagnostics = {
+  generated_at?: string;
+  repos_file?: string;
+  repos_file_exists?: boolean;
+  code_root?: string;
+  code_root_exists?: boolean;
+  managed_count?: number;
+  scan?: {
+    enabled?: boolean;
+    count?: number;
+    duration_ms?: number;
+    error?: string;
+  };
+};
+
 type StreamEnvelope = {
   topic: string;
   type: string;
@@ -132,6 +147,7 @@ export function CommandCenter() {
   const [tasks, setTasks] = useState<TaskItem[]>([]);
   const [preset, setPreset] = useState<PresetItem | null>(null);
   const [diagnostics, setDiagnostics] = useState<LaunchDiagnostics | null>(null);
+  const [repoDiagnostics, setRepoDiagnostics] = useState<RepoDiagnostics | null>(null);
   const [stream, setStream] = useState<StreamEnvelope[]>([]);
 
   const [search, setSearch] = useState("");
@@ -231,6 +247,24 @@ export function CommandCenter() {
     const payload = await apiRequest<LaunchDiagnostics>("/api/v1/system/launch-diagnostics");
     setDiagnostics(payload);
   }, []);
+
+  const loadRepoDiagnostics = useCallback(
+    async (scan: boolean = false) => {
+      const root = codeRoot.trim();
+      const query = new URLSearchParams();
+      if (root.length > 0) {
+        query.set("code_root", root);
+      }
+      if (scan) {
+        query.set("scan", "1");
+      }
+      const suffix = query.toString();
+      const path = suffix ? `/api/v1/repos/diagnostics?${suffix}` : "/api/v1/repos/diagnostics";
+      const payload = await apiRequest<RepoDiagnostics>(path);
+      setRepoDiagnostics(payload);
+    },
+    [codeRoot],
+  );
 
   const refreshAll = useCallback(async () => {
     await Promise.all([loadStatus(), loadActiveRun(), loadRuns(), loadTasks(), loadDiagnostics()]);
@@ -335,6 +369,10 @@ export function CommandCenter() {
   useEffect(() => {
     void Promise.all([loadPreset(), loadRepos()]).then(() => refreshAll());
   }, [loadPreset, loadRepos, refreshAll]);
+
+  useEffect(() => {
+    void loadRepoDiagnostics(false);
+  }, [loadRepoDiagnostics]);
 
   useEffect(() => {
     if (!preset) return;
@@ -702,6 +740,45 @@ export function CommandCenter() {
             </table>
           </div>
         </article>
+      </section>
+
+      <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-lg font-semibold">Repo Discovery Diagnostics</h2>
+          <button
+            type="button"
+            onClick={() => void loadRepoDiagnostics(true)}
+            className="rounded-full border border-[var(--line)] bg-white px-3 py-1 text-xs"
+          >
+            Refresh Scan
+          </button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-4">
+          <article className="rounded-xl border border-[var(--line)] bg-[#fbfdfb] p-3">
+            <p className="text-xs uppercase tracking-[0.08em] text-[var(--ink-soft)]">Managed Repos</p>
+            <p className="mt-1 text-lg font-semibold">{Number(repoDiagnostics?.managed_count || 0)}</p>
+          </article>
+          <article className="rounded-xl border border-[var(--line)] bg-[#fbfdfb] p-3">
+            <p className="text-xs uppercase tracking-[0.08em] text-[var(--ink-soft)]">Scan Count</p>
+            <p className="mt-1 text-lg font-semibold">{Number(repoDiagnostics?.scan?.count || 0)}</p>
+          </article>
+          <article className="rounded-xl border border-[var(--line)] bg-[#fbfdfb] p-3">
+            <p className="text-xs uppercase tracking-[0.08em] text-[var(--ink-soft)]">Scan Time</p>
+            <p className="mt-1 text-lg font-semibold">{Number(repoDiagnostics?.scan?.duration_ms || 0)}ms</p>
+          </article>
+          <article className="rounded-xl border border-[var(--line)] bg-[#fbfdfb] p-3">
+            <p className="text-xs uppercase tracking-[0.08em] text-[var(--ink-soft)]">Repos File</p>
+            <p className="mt-1 text-sm font-semibold">{repoDiagnostics?.repos_file_exists ? "Present" : "Missing"}</p>
+          </article>
+        </div>
+        <p className="mt-3 text-xs text-[var(--ink-soft)]">
+          Code root: {repoDiagnostics?.code_root || "-"} {repoDiagnostics?.code_root_exists ? "" : "(missing path)"}
+        </p>
+        {repoDiagnostics?.scan?.error ? (
+          <p className="mt-2 rounded-lg border border-[#e8c9bf] bg-[#fdf2ef] px-3 py-2 text-xs text-[#9d1f1f]">
+            Scan error: {repoDiagnostics.scan.error}
+          </p>
+        ) : null}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
